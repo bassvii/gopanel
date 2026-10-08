@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bassvii/gopanel/internal/api"
+	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/config"
 	"github.com/bassvii/gopanel/internal/db"
@@ -45,10 +46,16 @@ func run(args []string) error {
 		return runServe(args[1:])
 	case "admin":
 		return runAdmin(args[1:])
+	case "reset-password":
+		return runResetPassword(args[1:])
+	case "config":
+		return runConfig(args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
 }
+
+// --- admin ---
 
 func runAdmin(args []string) error {
 	if len(args) == 0 || args[0] != "create" {
@@ -97,6 +104,112 @@ func runAdmin(args []string) error {
 	return nil
 }
 
+// --- reset-password ---
+
+func runResetPassword(args []string) error {
+	fs := flag.NewFlagSet("reset-password", flag.ContinueOnError)
+	var (
+		user     = fs.String("user", "", "имя администратора")
+		password = fs.String("password", "", "новый пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD)")
+		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *user == "" {
+		return fmt.Errorf("--user is required")
+	}
+	if *password == "" {
+		*password = os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	}
+	if *password == "" {
+		return fmt.Errorf("password is required (--password or GOPANEL_ADMIN_PASSWORD)")
+	}
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		return err
+	}
+	if *dbPath != "" {
+		cfg.DBPath = *dbPath
+	}
+
+	conn, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := auth.ResetPassword(conn, *user, *password); err != nil {
+		return err
+	}
+	_ = audit.Log(conn, 0, audit.ActionPasswordReset, *user, "cli")
+
+	fmt.Printf("password reset for %q; 2FA disabled; all sessions terminated\n", *user)
+	return nil
+}
+
+// --- config ---
+
+func runConfig(args []string) error {
+	fs := flag.NewFlagSet("config", flag.ContinueOnError)
+	var (
+		port     = fs.Int("port", 0, "новый порт админки (0 — не менять)")
+		basePath = fs.String("base-path", "", "новый base path (пусто — не менять)")
+		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		return err
+	}
+	if *dbPath != "" {
+		cfg.DBPath = *dbPath
+	}
+
+	conn, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if *port == 0 && *basePath == "" {
+		// Показать текущие значения.
+		p, _, _ := db.GetSetting(conn, settingAdminPort)
+		b, _, _ := db.GetSetting(conn, settingAdminBasePath)
+		fmt.Printf("port:      %s\nbase_path: %s\ndb_path:   %s\n", p, b, cfg.DBPath)
+		return nil
+	}
+
+	if *port != 0 {
+		if *port < 1 || *port > 65535 {
+			return fmt.Errorf("port must be 1..65535")
+		}
+		if err := db.SetSetting(conn, settingAdminPort, strconv.Itoa(*port)); err != nil {
+			return err
+		}
+		fmt.Printf("port set to %d\n", *port)
+	}
+
+	if *basePath != "" {
+		if (*basePath)[0] != '/' {
+			*basePath = "/" + *basePath
+		}
+		if err := db.SetSetting(conn, settingAdminBasePath, *basePath); err != nil {
+			return err
+		}
+		fmt.Printf("base_path set to %s\n", *basePath)
+	}
+	fmt.Println("restart the panel to apply changes")
+	return nil
+}
+
+// --- run ---
+
 func runServe(args []string) error {
 	cfg, err := config.Load("", args)
 	if err != nil {
@@ -111,7 +224,6 @@ func runServe(args []string) error {
 	}
 	defer conn.Close()
 
-	// Если админов ещё нет — попробовать создать из env (для Docker).
 	if err := ensureFirstAdmin(conn, log); err != nil {
 		return err
 	}
@@ -160,8 +272,8 @@ func runServe(args []string) error {
 	}
 }
 
-// ensureFirstAdmin создаёт первого админа из env-переменных,
-// если админов ещё нет. Для Docker.
+// --- helpers ---
+
 func ensureFirstAdmin(conn *sql.DB, log *slog.Logger) error {
 	n, err := auth.CountAdmins(conn)
 	if err != nil {
