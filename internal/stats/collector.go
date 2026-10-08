@@ -79,6 +79,7 @@ func (c *Collector) Run(ctx context.Context) {
 // pollOnce делает один опрос.
 func (c *Collector) pollOnce(ctx context.Context) {
 	if c.core != nil && !c.core.IsRunning() {
+		c.log.Debug("poll skipped: core not running")
 		return
 	}
 	samples, err := c.queryStats(ctx)
@@ -86,6 +87,7 @@ func (c *Collector) pollOnce(ctx context.Context) {
 		c.log.Warn("stats query failed", "err", err)
 		return
 	}
+	c.log.Debug("stats polled", "count", len(samples))
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -95,12 +97,20 @@ func (c *Collector) pollOnce(ctx context.Context) {
 		last, ok := c.lastSeen[email]
 
 		var deltaUp, deltaDown int64
-		if !ok || sample.up < last.up || sample.down < last.down {
-			// Первый опрос или сброс счётчиков (перезапуск Xray).
-			// Не начисляем разницу, просто фиксируем новое значение.
-			deltaUp = 0
-			deltaDown = 0
-		} else {
+		switch {
+		case !ok:
+			// Первый опрос. Если счётчики ненулевые — значит,
+			// трафик уже прошёл с момента старта Xray. Записываем его.
+			// Если нулевые — просто фиксируем базу.
+			deltaUp = sample.up
+			deltaDown = sample.down
+		case sample.up < last.up || sample.down < last.down:
+			// Сброс счётчиков (перезапуск Xray).
+			// Считаем, что сброс произошёл в ноль, значит
+			// текущее значение — это новое приращение с момента сброса.
+			deltaUp = sample.up
+			deltaDown = sample.down
+		default:
 			deltaUp = sample.up - last.up
 			deltaDown = sample.down - last.down
 		}

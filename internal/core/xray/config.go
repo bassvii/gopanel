@@ -13,7 +13,7 @@ import (
 type Config struct {
 	Log       map[string]any   `json:"log,omitempty"`
 	API       map[string]any   `json:"api,omitempty"`
-	Stats     map[string]any   `json:"stats,omitempty"`
+	Stats     map[string]any   `json:"stats"`
 	Policy    map[string]any   `json:"policy,omitempty"`
 	Inbounds  []Inbound        `json:"inbounds"`
 	Outbounds []map[string]any `json:"outbounds"`
