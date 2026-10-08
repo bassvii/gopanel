@@ -12,6 +12,7 @@ import (
     "strconv"
 
 	"github.com/bassvii/gopanel/internal/auth"
+	"github.com/bassvii/gopanel/internal/audit"
 )
 
 const sessionCookieName = "gopanel_session"
@@ -70,6 +71,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
 		_ = auth.RecordFailedAttempt(s.db, ip)
+		_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, "wrong password", ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
 	}
@@ -86,12 +88,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode) {
-			// Может быть код восстановления?
 			if err := auth.ConsumeRecoveryCode(s.db, admin.ID, req.TOTPCode); err != nil {
 				_ = auth.RecordFailedAttempt(s.db, ip)
+				_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, "wrong totp", ip)
 				writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid code"})
 				return
 			}
+			_ = audit.Log(s.db, admin.ID, audit.ActionRecoveryUsed, "", ip)
 		}
 
 	}
@@ -102,6 +105,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	_ = audit.Log(s.db, admin.ID, audit.ActionLogin, admin.Username, ip)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
@@ -126,6 +131,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		if sess, err := auth.GetSession(s.db, cookie.Value); err == nil {
 			_ = auth.DeleteSession(s.db, sess.ID)
+			_ = audit.Log(s.db, sess.AdminID, audit.ActionLogout, "", clientIP(r))
 		}
 	}
 	http.SetCookie(w, &http.Cookie{

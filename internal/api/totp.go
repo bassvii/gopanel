@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -128,6 +129,8 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPEnabled, "", clientIP(r))
+
 	writeJSON(w, http.StatusOK, totpEnableResponse{
 		OK:            true,
 		RecoveryCodes: codes,
@@ -149,6 +152,9 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPDisabled, "", clientIP(r))
+
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

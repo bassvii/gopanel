@@ -131,6 +131,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/2fa/enable", s.handleTOTPEnable)
 	s.mux.HandleFunc(s.secret+"/2fa/disable", s.handleTOTPDisable)
 	s.mux.HandleFunc(s.secret+"/2fa/status", s.handleTOTPStatus)
+	s.mux.HandleFunc(s.secret+"/audit", s.handleAudit)
 
 	// Всё остальное — 404.
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
