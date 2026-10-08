@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/bassvii/gopanel/internal/config"
+	"github.com/bassvii/gopanel/internal/db"
 )
 
 func main() {
@@ -18,8 +19,6 @@ func main() {
 }
 
 func run(args []string) error {
-	// Пока единственная команда — run. Остальные (setup-token, reset-password,
-	// config) появятся на следующих шагах Этапа 1.
 	switch {
 	case len(args) == 0 || args[0] == "run":
 		var rest []string
@@ -37,8 +36,16 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	conn, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
 	fmt.Printf("config loaded: db=%s listen=%s:%d base_path=%q\n",
 		cfg.DBPath, cfg.Listen, cfg.Port, cfg.BasePath)
+	fmt.Println("database ready")
 	// Реальный запуск сервера — на шаге 1.3.
 	return nil
 }
