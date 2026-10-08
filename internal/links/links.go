@@ -63,11 +63,3 @@ func getString(m map[string]any, key string) string {
 	}
 	return ""
 }
-
-// getBool достаёт bool из map.
-func getBool(m map[string]any, key string) bool {
-	if v, ok := m[key].(bool); ok {
-		return v
-	}
-	return false
-}
