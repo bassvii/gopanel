@@ -56,6 +56,18 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_audit_ts ON audit_log(ts);
 `,
 	},
+	{
+		version: 2,
+		name:    "login attempts",
+		sql: `
+CREATE TABLE login_attempts (
+    ip           TEXT    PRIMARY KEY,
+    count        INTEGER NOT NULL DEFAULT 0,
+    first_failed INTEGER NOT NULL DEFAULT 0,
+    locked_until INTEGER NOT NULL DEFAULT 0
+);
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {

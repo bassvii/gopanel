@@ -122,7 +122,12 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 func (s *Server) routes() {
-	// Заглушка: до создания первого админа всё отдаёт 404.
+	// Всё под секретным базовым путём.
+	s.mux.HandleFunc(s.secret+"/login", s.handleLogin)
+	s.mux.HandleFunc(s.secret+"/logout", s.handleLogout)
+	s.mux.HandleFunc(s.secret+"/me", s.handleMe)
+
+	// Всё остальное — 404.
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
