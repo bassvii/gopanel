@@ -22,6 +22,7 @@ import (
 	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/config"
 	"github.com/bassvii/gopanel/internal/db"
+	"github.com/bassvii/gopanel/internal/stats"
 )
 
 const (
@@ -249,6 +250,17 @@ func runServe(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Запускаем сборщик статистики Xray, если бинарник доступен.
+	// Он опрашивает StatsService и пишет трафик в БД.
+	collector := stats.New(
+		conn,
+		cfg.XrayBin,
+		"127.0.0.1:10085",   // адрес API, совпадает с конфигом Xray
+		30*time.Second,
+		log,
+	)
+	go collector.Run(ctx)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start() }()
