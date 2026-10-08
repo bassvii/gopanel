@@ -155,6 +155,8 @@ func (s *Server) requireCSRF(w http.ResponseWriter, r *http.Request, sess auth.S
 	return true
 }
 
+var _ = (*Server).requireCSRF
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
