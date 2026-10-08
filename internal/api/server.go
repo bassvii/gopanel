@@ -12,33 +12,33 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
 // Server — админский HTTP-сервер.
 type Server struct {
-	cfg  Config
-	db   *sql.DB
-	log  *slog.Logger
-	http *http.Server
-	mux  *http.ServeMux
+	cfg    Config
+	db     *sql.DB
+	log    *slog.Logger
+	http   *http.Server
+	mux    *http.ServeMux
 
-	secret string
-	addr   string
-	port   int
+	secret   string
+	addr     string
+	port     int
+	reloadCh chan struct{}
 }
 
-// Config — параметры сервера, отдельно от config.Config,
-// чтобы пакет api не зависел от всего конфига панели.
+// Config — параметры сервера.
 type Config struct {
 	Listen   string
 	Port     int
 	BasePath string
 }
 
-// New создаёт сервер. BasePath должен быть уже готов (main решает,
-// сгенерировать новый или взять из БД). Port == 0 означает
-// «выбрать свободный при Start».
+// New создаёт сервер. BasePath должен быть уже готов.
+// Port == 0 означает «выбрать свободный при Start».
 func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 	if cfg.Listen == "" {
 		return nil, errors.New("listen address is required")
@@ -60,11 +60,12 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:    cfg,
-		db:     conn,
-		log:    log,
-		mux:    http.NewServeMux(),
-		secret: secret,
+		cfg:      cfg,
+		db:       conn,
+		log:      log,
+		mux:      http.NewServeMux(),
+		secret:   secret,
+		reloadCh: make(chan struct{}, 1),
 	}
 	s.routes()
 	return s, nil
@@ -79,9 +80,26 @@ func (s *Server) Port() int { return s.port }
 // SecretPath возвращает базовый путь.
 func (s *Server) SecretPath() string { return s.secret }
 
+// ReloadCh возвращает канал для чтения сигналов перезагрузки.
+func (s *Server) ReloadCh() <-chan struct{} {
+	return s.reloadCh
+}
+
+// ReloadSignal возвращает канал для отправки сигналов перезагрузки.
+func (s *Server) ReloadSignal() chan<- struct{} {
+	return s.reloadCh
+}
+
+// requestReload отправляет сигнал перегенерировать конфиг Xray.
+// Не блокирует: если канал уже полон, сигнал объединяется с предыдущим.
+func (s *Server) requestReload() {
+	select {
+	case s.reloadCh <- struct{}{}:
+	default:
+	}
+}
+
 // Start запускает сервер и блокируется до Stop или ошибки.
-// Если cfg.Port == 0, ОС выберет свободный порт; фактический
-// доступен через Port().
 func (s *Server) Start() error {
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.cfg.Listen, s.cfg.Port))
 	if err != nil {
@@ -122,7 +140,6 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 func (s *Server) routes() {
-	// Всё под секретным базовым путём.
 	s.mux.HandleFunc(s.secret+"/login", s.handleLogin)
 	s.mux.HandleFunc(s.secret+"/logout", s.handleLogout)
 	s.mux.HandleFunc(s.secret+"/me", s.handleMe)
@@ -133,8 +150,21 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/2fa/status", s.handleTOTPStatus)
 	s.mux.HandleFunc(s.secret+"/audit", s.handleAudit)
 
-	// Всё остальное — 404.
+	s.mux.HandleFunc(s.secret+"/inbounds", s.handleInbounds)
+	s.mux.HandleFunc(s.secret+"/inbounds/", s.handleInbound)
+	s.mux.HandleFunc(s.secret+"/users", s.handleUsers)
+	s.mux.HandleFunc(s.secret+"/users/", s.handleUserRoutes)
+
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
+}
+
+// handleUserRoutes распределяет /users/{id} и /users/{id}/inbounds.
+func (s *Server) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.URL.Path, "/inbounds") {
+		s.handleUserInbounds(w, r)
+		return
+	}
+	s.handleUser(w, r)
 }

@@ -16,13 +16,20 @@ import (
 	"time"
 )
 
+// CoreState — минимальный интерфейс, чтобы stats не зависел от core.
+// Реализуется *xray.Core.
+type CoreState interface {
+	IsRunning() bool
+}
+
 // Collector периодически опрашивает статистику Xray.
 type Collector struct {
 	db        *sql.DB
 	binPath   string
-	apiServer string // 127.0.0.1:10085
+	apiServer string
 	log       *slog.Logger
 	interval  time.Duration
+	core      CoreState
 
 	mu       sync.Mutex
 	lastSeen map[string]trafficSample // email → последние значения
@@ -34,7 +41,7 @@ type trafficSample struct {
 }
 
 // New создаёт сборщик.
-func New(db *sql.DB, binPath, apiServer string, interval time.Duration, log *slog.Logger) *Collector {
+func New(db *sql.DB, binPath, apiServer string, interval time.Duration, core CoreState, log *slog.Logger) *Collector {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -71,6 +78,9 @@ func (c *Collector) Run(ctx context.Context) {
 
 // pollOnce делает один опрос.
 func (c *Collector) pollOnce(ctx context.Context) {
+	if c.core != nil && !c.core.IsRunning() {
+		return
+	}
 	samples, err := c.queryStats(ctx)
 	if err != nil {
 		c.log.Warn("stats query failed", "err", err)

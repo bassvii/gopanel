@@ -21,6 +21,7 @@ import (
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/config"
+	"github.com/bassvii/gopanel/internal/core/xray"
 	"github.com/bassvii/gopanel/internal/db"
 	"github.com/bassvii/gopanel/internal/stats"
 )
@@ -179,7 +180,6 @@ func runConfig(args []string) error {
 	defer conn.Close()
 
 	if *port == 0 && *basePath == "" {
-		// Показать текущие значения.
 		p, _, _ := db.GetSetting(conn, settingAdminPort)
 		b, _, _ := db.GetSetting(conn, settingAdminBasePath)
 		fmt.Printf("port:      %s\nbase_path: %s\ndb_path:   %s\n", p, b, cfg.DBPath)
@@ -212,33 +212,56 @@ func runConfig(args []string) error {
 // --- run ---
 
 func runServe(args []string) error {
+	// 1. Конфиг и логгер.
 	cfg, err := config.Load("", args)
 	if err != nil {
 		return err
 	}
-
 	log := newLogger(cfg.LogLevel)
 
+	// 2. База данных.
 	conn, err := db.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
+	// 3. Контекст отмены — создаём ДО всего, что его использует.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// 4. Первый админ из env.
 	if err := ensureFirstAdmin(conn, log); err != nil {
 		return err
 	}
 
+	// 5. Порт и base path.
 	port, err := resolvePort(conn, cfg.Port)
 	if err != nil {
 		return err
 	}
-
 	basePath, err := resolveBasePath(conn, cfg.BasePath)
 	if err != nil {
 		return err
 	}
 
+	// 6. Ядро Xray.
+	core, err := xray.New(cfg.XrayBin, cfg.XrayConfigPath, log)
+	if err != nil {
+		return fmt.Errorf("init xray core: %w", err)
+	}
+
+	configData, err := buildConfigFromDB(conn)
+	if err != nil {
+		return fmt.Errorf("build config: %w", err)
+	}
+
+	// 7. Запуск Xray.
+	if err := core.ApplyConfig(ctx, configData); err != nil {
+		log.Error("xray start failed", "err", err)
+	}
+
+	// 8. Админский HTTP-сервер (нужен для ReloadCh).
 	srv, err := api.New(api.Config{
 		Listen:   cfg.Listen,
 		Port:     port,
@@ -248,23 +271,28 @@ func runServe(args []string) error {
 		return err
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	// Запускаем сборщик статистики Xray, если бинарник доступен.
-	// Он опрашивает StatsService и пишет трафик в БД.
+	// 9. Сборщик статистики (не опрашивает, если ядро не запущено).
 	collector := stats.New(
 		conn,
 		cfg.XrayBin,
-		"127.0.0.1:10085",   // адрес API, совпадает с конфигом Xray
+		"127.0.0.1:10085",
 		30*time.Second,
+		core,
 		log,
 	)
 	go collector.Run(ctx)
 
+	// 10. Цикл перезагрузки конфига.
+	go reloadLoop(ctx, srv, core, conn, log)
+
+	// 11. Применение лимитов — теперь srv существует.
+	go stats.RunLimitEnforcer(ctx, conn, srv.ReloadSignal(), 30*time.Second, log)
+
+	// 12. HTTP-сервер в горутине.
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start() }()
 
+	// 13. Дождаться фактического порта.
 	actualPort, err := waitForPort(ctx, srv, 5*time.Second)
 	if err != nil {
 		return err
@@ -273,14 +301,39 @@ func runServe(args []string) error {
 		return err
 	}
 
+	// 14. Ждать сигнала или ошибки.
 	select {
 	case <-ctx.Done():
 		log.Info("shutdown signal received")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if err := core.Stop(); err != nil {
+			log.Warn("xray stop failed", "err", err)
+		}
 		return srv.Stop(shutdownCtx)
 	case err := <-errCh:
 		return err
+	}
+}
+
+// reloadLoop слушает сигналы перезагрузки и перегенерирует конфиг Xray.
+func reloadLoop(ctx context.Context, srv *api.Server, core *xray.Core, conn *sql.DB, log *slog.Logger) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-srv.ReloadCh():
+			data, err := buildConfigFromDB(conn)
+			if err != nil {
+				log.Error("rebuild config failed", "err", err)
+				continue
+			}
+			if err := core.ApplyConfig(ctx, data); err != nil {
+				log.Error("apply config failed", "err", err)
+				continue
+			}
+			log.Info("xray config reloaded")
+		}
 	}
 }
 
@@ -393,4 +446,54 @@ func newLogger(level string) *slog.Logger {
 		lvl = slog.LevelInfo
 	}
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
+}
+
+// buildConfigFromDB собирает конфиг Xray из состояния БД.
+func buildConfigFromDB(conn *sql.DB) ([]byte, error) {
+	inbounds, err := db.ListInbounds(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	var input xray.BuildInput
+	for _, in := range inbounds {
+		links, err := db.ListUsersForInbound(conn, in.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		var users []xray.UserInput
+		for _, l := range links {
+			u, err := db.GetUser(conn, l.UserID)
+			if err != nil {
+				return nil, err
+			}
+			users = append(users, xray.UserInput{
+				UserID:         u.ID,
+				Name:           u.Name,
+				Email:          u.Email,
+				Enabled:        u.Enabled,
+				CredentialJSON: l.CredentialJSON,
+			})
+		}
+
+		input.Inbounds = append(input.Inbounds, xray.InboundInput{
+			ID:           in.ID,
+			Tag:          in.Tag,
+			Protocol:     in.Protocol,
+			Port:         in.Port,
+			Listen:       in.Listen,
+			SettingsJSON: in.SettingsJSON,
+			StreamJSON:   in.StreamJSON,
+			SniffingJSON: in.SniffingJSON,
+			Enabled:      in.Enabled,
+			Users:        users,
+		})
+	}
+
+	cfg, err := xray.BuildConfig(input)
+	if err != nil {
+		return nil, err
+	}
+	return xray.MarshalConfig(cfg)
 }

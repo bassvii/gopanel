@@ -21,6 +21,7 @@ type Config struct {
 	BasePath string `json:"base_path"`
 	XrayBin  string `json:"xray_bin"`
 	LogLevel string `json:"log_level"`
+	XrayConfigPath string `json:"xray_config_path"`
 }
 
 // Default возвращает конфиг со значениями по умолчанию.
@@ -32,6 +33,7 @@ func Default() Config {
 		BasePath: "",
 		XrayBin:  "/usr/local/bin/xray",
 		LogLevel: "info",
+		XrayConfigPath: "/tmp/gopanel-xray.json",
 	}
 }
 
@@ -91,6 +93,9 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("GOPANEL_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
 	}
+	if v := os.Getenv("GOPANEL_XRAY_CONFIG"); v != "" {
+		cfg.XrayConfigPath = v
+	}
 }
 
 func applyFlags(cfg *Config, args []string) error {
@@ -101,12 +106,13 @@ func applyFlags(cfg *Config, args []string) error {
 	fs.StringVar(&cfg.BasePath, "base-path", cfg.BasePath, "секретный базовый путь")
 	fs.StringVar(&cfg.XrayBin, "xray-bin", cfg.XrayBin, "путь к бинарнику Xray")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "уровень логов: debug, info, warn, error")
+	fs.StringVar(&cfg.XrayConfigPath, "xray-config", cfg.XrayConfigPath, "путь к файлу конфига Xray")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if cfg.Port < 0 || cfg.Port > 65535 {
-		return errors.New("port must be 0..65535")
+        return errors.New("port must be 0..65535")
 	}
 	return nil
 }
