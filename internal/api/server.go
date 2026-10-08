@@ -160,11 +160,14 @@ func (s *Server) routes() {
 	})
 }
 
-// handleUserRoutes распределяет /users/{id} и /users/{id}/inbounds.
+// handleUserRoutes распределяет /users/{id}, /users/{id}/inbounds, /users/{id}/links.
 func (s *Server) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
-	if strings.Contains(r.URL.Path, "/inbounds") {
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/inbounds"):
 		s.handleUserInbounds(w, r)
-		return
+	case strings.HasSuffix(r.URL.Path, "/links"):
+		s.handleUserLinks(w, r)
+	default:
+		s.handleUser(w, r)
 	}
-	s.handleUser(w, r)
 }
