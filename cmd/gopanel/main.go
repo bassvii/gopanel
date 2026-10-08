@@ -6,8 +6,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"database/sql"
+	"encoding/hex"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bassvii/gopanel/internal/api"
+	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/config"
 	"github.com/bassvii/gopanel/internal/db"
 )
@@ -34,16 +36,65 @@ func main() {
 }
 
 func run(args []string) error {
-	switch {
-	case len(args) == 0 || args[0] == "run":
-		var rest []string
-		if len(args) > 0 {
-			rest = args[1:]
-		}
-		return runServe(rest)
+	if len(args) == 0 {
+		return runServe(nil)
+	}
+
+	switch args[0] {
+	case "run":
+		return runServe(args[1:])
+	case "admin":
+		return runAdmin(args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
+}
+
+func runAdmin(args []string) error {
+	if len(args) == 0 || args[0] != "create" {
+		return fmt.Errorf("usage: gopanel admin create --user NAME [--password PASS]")
+	}
+
+	fs := flag.NewFlagSet("admin create", flag.ContinueOnError)
+	var (
+		user     = fs.String("user", "", "имя администратора")
+		password = fs.String("password", "", "пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD)")
+		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+	)
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	if *user == "" {
+		return fmt.Errorf("--user is required")
+	}
+	if *password == "" {
+		*password = os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	}
+	if *password == "" {
+		return fmt.Errorf("password is required (--password or GOPANEL_ADMIN_PASSWORD)")
+	}
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		return err
+	}
+	if *dbPath != "" {
+		cfg.DBPath = *dbPath
+	}
+
+	conn, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	id, err := auth.CreateAdmin(conn, *user, *password)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("admin %q created (id=%d)\n", *user, id)
+	return nil
 }
 
 func runServe(args []string) error {
@@ -59,6 +110,11 @@ func runServe(args []string) error {
 		return err
 	}
 	defer conn.Close()
+
+	// Если админов ещё нет — попробовать создать из env (для Docker).
+	if err := ensureFirstAdmin(conn, log); err != nil {
+		return err
+	}
 
 	port, err := resolvePort(conn, cfg.Port)
 	if err != nil {
@@ -85,7 +141,6 @@ func runServe(args []string) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start() }()
 
-	// Ждём, пока сервер выберет фактический порт, и сохраняем его.
 	actualPort, err := waitForPort(ctx, srv, 5*time.Second)
 	if err != nil {
 		return err
@@ -105,8 +160,31 @@ func runServe(args []string) error {
 	}
 }
 
-// resolvePort выбирает порт: приоритет — явно заданный (флаг/env/файл),
-// иначе значение из БД, иначе 0 (ОС выберет свободный).
+// ensureFirstAdmin создаёт первого админа из env-переменных,
+// если админов ещё нет. Для Docker.
+func ensureFirstAdmin(conn *sql.DB, log *slog.Logger) error {
+	n, err := auth.CountAdmins(conn)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+
+	user := os.Getenv("GOPANEL_ADMIN_USER")
+	pass := os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	if user == "" || pass == "" {
+		return nil
+	}
+
+	id, err := auth.CreateAdmin(conn, user, pass)
+	if err != nil {
+		return fmt.Errorf("create first admin from env: %w", err)
+	}
+	log.Info("first admin created from env", "username", user, "id", id)
+	return nil
+}
+
 func resolvePort(conn *sql.DB, requested int) (int, error) {
 	if requested != 0 {
 		return requested, nil
@@ -125,8 +203,6 @@ func resolvePort(conn *sql.DB, requested int) (int, error) {
 	return p, nil
 }
 
-// resolveBasePath берёт base_path из явного значения, из БД,
-// или генерирует новый и сохраняет его.
 func resolveBasePath(conn *sql.DB, requested string) (string, error) {
 	if requested != "" {
 		return requested, nil
@@ -148,8 +224,6 @@ func resolveBasePath(conn *sql.DB, requested string) (string, error) {
 	return generated, nil
 }
 
-// persistPort сохраняет фактический порт в БД. Если он не менялся —
-// запись всё равно безвредна.
 func persistPort(conn *sql.DB, port int) error {
 	if port == 0 {
 		return nil
@@ -157,7 +231,6 @@ func persistPort(conn *sql.DB, port int) error {
 	return db.SetSetting(conn, settingAdminPort, strconv.Itoa(port))
 }
 
-// waitForPort ждёт, пока srv.Start выставит порт.
 func waitForPort(ctx context.Context, srv *api.Server, timeout time.Duration) (int, error) {
 	deadline := time.Now().Add(timeout)
 	for {
