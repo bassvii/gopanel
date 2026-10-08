@@ -19,11 +19,13 @@ const sessionCookieName = "gopanel_session"
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	TOTPCode string `json:"totp_code,omitempty"`
 }
 
 type loginResponse struct {
 	OK       bool   `json:"ok"`
 	CSRFToken string `json:"csrf_token,omitempty"`
+	NeedsTOTP bool   `json:"needs_totp,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 
@@ -73,6 +75,26 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = auth.ClearFailedAttempts(s.db, ip)
+
+	// Если у админа включена 2FA — требуем код.
+	if admin.TOTPSecret != "" {
+		if req.TOTPCode == "" {
+			writeJSON(w, http.StatusUnauthorized, loginResponse{
+				Error:    "totp_required",
+				NeedsTOTP: true,
+			})
+			return
+		}
+		if !auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode) {
+			// Может быть код восстановления?
+			if err := auth.ConsumeRecoveryCode(s.db, admin.ID, req.TOTPCode); err != nil {
+				_ = auth.RecordFailedAttempt(s.db, ip)
+				writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid code"})
+				return
+			}
+		}
+
+	}
 
 	token, sess, err := auth.NewSession(s.db, admin.ID, ip, r.UserAgent())
 	if err != nil {

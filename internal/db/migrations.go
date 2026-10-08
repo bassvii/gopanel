@@ -68,6 +68,19 @@ CREATE TABLE login_attempts (
 );
 `,
 	},
+	{
+		version: 3,
+		name:    "recovery codes",
+		sql: `
+CREATE TABLE recovery_codes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id  INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+    code_hash TEXT    NOT NULL,
+    used_at   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_recovery_admin ON recovery_codes(admin_id);
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {
