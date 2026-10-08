@@ -81,6 +81,57 @@ CREATE TABLE recovery_codes (
 CREATE INDEX idx_recovery_admin ON recovery_codes(admin_id);
 `,
 	},
+	{
+		version: 4,
+		name:    "inbounds, users, user_inbound, traffic",
+		sql: `
+CREATE TABLE inbounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag           TEXT    NOT NULL UNIQUE,
+    protocol      TEXT    NOT NULL,
+    port          INTEGER NOT NULL,
+    listen        TEXT    NOT NULL DEFAULT '0.0.0.0',
+    settings_json TEXT    NOT NULL DEFAULT '{}',
+    stream_json   TEXT    NOT NULL DEFAULT '{}',
+    sniffing_json TEXT    NOT NULL DEFAULT '{}',
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    INTEGER NOT NULL
+);
+CREATE INDEX idx_inbounds_protocol ON inbounds(protocol);
+
+CREATE TABLE users (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    name           TEXT    NOT NULL UNIQUE,
+    email          TEXT    NOT NULL UNIQUE,
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    quota_bytes    INTEGER NOT NULL DEFAULT 0,
+    used_bytes     INTEGER NOT NULL DEFAULT 0,
+    expires_at     INTEGER NOT NULL DEFAULT 0,
+    device_limit   INTEGER NOT NULL DEFAULT 0,
+    sub_token_hash TEXT    NOT NULL DEFAULT '',
+    note           TEXT    NOT NULL DEFAULT '',
+    created_at     INTEGER NOT NULL
+);
+CREATE INDEX idx_users_email ON users(email);
+
+CREATE TABLE user_inbound (
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    inbound_id      INTEGER NOT NULL REFERENCES inbounds(id) ON DELETE CASCADE,
+    credential_json TEXT    NOT NULL DEFAULT '{}',
+    PRIMARY KEY (user_id, inbound_id)
+);
+CREATE INDEX idx_user_inbound_inbound ON user_inbound(inbound_id);
+
+CREATE TABLE traffic (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ts         INTEGER NOT NULL,
+    up_bytes   INTEGER NOT NULL DEFAULT 0,
+    down_bytes INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_traffic_user_ts ON traffic(user_id, ts);
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {
