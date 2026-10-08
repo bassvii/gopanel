@@ -1,0 +1,26 @@
+# Собранные бинарники
+bin/
+/gopanel
+/gopanel.exe
+
+# База данных
+*.db
+*.db-wal
+*.db-shm
+
+# Логи
+*.log
+
+# Фронтенд
+web/node_modules/
+web/dist/
+
+# Редакторы
+.vscode/
+.idea/
+*.swp
+*~
+
+# ОС
+.DS_Store
+Thumbs.db

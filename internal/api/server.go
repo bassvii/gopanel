@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ type Server struct {
 	addr     string
 	port     int
 	reloadCh chan struct{}
+	webFS    fs.FS
 }
 
 // Config — параметры сервера.
@@ -37,8 +39,7 @@ type Config struct {
 	BasePath string
 }
 
-// New создаёт сервер. BasePath должен быть уже готов.
-// Port == 0 означает «выбрать свободный при Start».
+// New создаёт сервер.
 func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 	if cfg.Listen == "" {
 		return nil, errors.New("listen address is required")
@@ -71,6 +72,13 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 	return s, nil
 }
 
+// SetWebFS устанавливает файловую систему с фронтендом
+// и перерегистрирует маршруты.
+func (s *Server) SetWebFS(webFS fs.FS) {
+	s.webFS = webFS
+	s.routes()
+}
+
 // Addr возвращает фактический адрес после Start.
 func (s *Server) Addr() string { return s.addr }
 
@@ -91,7 +99,6 @@ func (s *Server) ReloadSignal() chan<- struct{} {
 }
 
 // requestReload отправляет сигнал перегенерировать конфиг Xray.
-// Не блокирует: если канал уже полон, сигнал объединяется с предыдущим.
 func (s *Server) requestReload() {
 	select {
 	case s.reloadCh <- struct{}{}:
@@ -139,7 +146,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
+// routes регистрирует все маршруты. Вызывается при создании
+// и при SetWebFS (чтобы перерегистрировать корневой маршрут).
 func (s *Server) routes() {
+	s.mux = http.NewServeMux()
+
 	s.mux.HandleFunc(s.secret+"/login", s.handleLogin)
 	s.mux.HandleFunc(s.secret+"/logout", s.handleLogout)
 	s.mux.HandleFunc(s.secret+"/me", s.handleMe)
@@ -149,15 +160,45 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/2fa/disable", s.handleTOTPDisable)
 	s.mux.HandleFunc(s.secret+"/2fa/status", s.handleTOTPStatus)
 	s.mux.HandleFunc(s.secret+"/audit", s.handleAudit)
-
 	s.mux.HandleFunc(s.secret+"/inbounds", s.handleInbounds)
 	s.mux.HandleFunc(s.secret+"/inbounds/", s.handleInbound)
 	s.mux.HandleFunc(s.secret+"/users", s.handleUsers)
 	s.mux.HandleFunc(s.secret+"/users/", s.handleUserRoutes)
 
-	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	if s.webFS != nil {
+		s.mux.HandleFunc("/", s.handleStatic)
+	} else {
+		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+	}
+}
+
+// handleStatic отдаёт файлы фронтенда. Если файл не найден —
+// отдаёт index.html (SPA-роутинг).
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if path == "" {
+		path = "index.html"
+	}
+	f, err := s.webFS.Open(path)
+	if err != nil {
+		s.serveIndex(w, r)
+		return
+	}
+	f.Close()
+	http.FileServer(http.FS(s.webFS)).ServeHTTP(w, r)
+}
+
+// serveIndex отдаёт index.html.
+func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
+	data, err := fs.ReadFile(s.webFS, "index.html")
+	if err != nil {
 		http.NotFound(w, r)
-	})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(data)
 }
 
 // handleUserRoutes распределяет /users/{id}, /users/{id}/inbounds, /users/{id}/links.

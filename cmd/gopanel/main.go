@@ -24,6 +24,7 @@ import (
 	"github.com/bassvii/gopanel/internal/core/xray"
 	"github.com/bassvii/gopanel/internal/db"
 	"github.com/bassvii/gopanel/internal/stats"
+	"github.com/bassvii/gopanel"
 )
 
 const (
@@ -269,6 +270,15 @@ func runServe(args []string) error {
 	}, conn, log)
 	if err != nil {
 		return err
+	}
+
+	// Вшитый фронтенд. Если web/dist не собран, webFS == nil,
+	// и корень отдаёт 404.
+	if webFS := gopanel.WebFS(); webFS != nil {
+		srv.SetWebFS(webFS)
+		log.Info("frontend embedded")
+	} else {
+		log.Warn("frontend not embedded, / will return 404")
 	}
 
 	// 9. Сборщик статистики (не опрашивает, если ядро не запущено).
