@@ -132,6 +132,14 @@ CREATE TABLE traffic (
 CREATE INDEX idx_traffic_user_ts ON traffic(user_id, ts);
 `,
 	},
+	{
+		version: 5,
+		name:    "audit action_ru",
+		sql: `
+ALTER TABLE audit_log ADD COLUMN action_ru TEXT NOT NULL DEFAULT '';
+CREATE INDEX idx_audit_action_ru ON audit_log(action_ru);
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {
