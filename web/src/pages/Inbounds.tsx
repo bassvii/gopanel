@@ -1,7 +1,20 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Modal } from '../components/Modal'
-import { listInbounds, createInbound, updateInbound, deleteInbound, type InboundInput } from '../api/inbounds'
+import {
+  listInbounds,
+  createInbound,
+  updateInbound,
+  deleteInbound,
+  type InboundInput,
+} from '../api/inbounds'
 import { ApiError } from '../api/client'
+import { generateX25519, generateShortID } from '../api/xray'
+import {
+  parseStreamJSON,
+  buildStreamJSON,
+  defaultStreamSettings,
+  type StreamSettings,
+} from '../lib/streamSettings'
 import type { Inbound } from '../api/types'
 
 // Пресеты протоколов — предзаполненные формы.
@@ -10,7 +23,7 @@ interface Preset {
   protocol: string
   defaultPort: number
   settings: string
-  stream: string
+  stream: StreamSettings
   sniffing: string
 }
 
@@ -18,9 +31,9 @@ const presets: Preset[] = [
   {
     name: 'VLESS',
     protocol: 'vless',
-    defaultPort: 443,
+    defaultPort: 8443,
     settings: JSON.stringify({ decryption: 'none' }, null, 2),
-    stream: JSON.stringify({ network: 'tcp', security: 'none' }, null, 2),
+    stream: { ...defaultStreamSettings, network: 'tcp', security: 'none' },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
@@ -28,44 +41,34 @@ const presets: Preset[] = [
     protocol: 'vless',
     defaultPort: 443,
     settings: JSON.stringify({ decryption: 'none' }, null, 2),
-    stream: JSON.stringify(
-      {
-        network: 'tcp',
-        security: 'reality',
-        realitySettings: {
-          dest: 'www.google.com:443',
-          serverNames: ['www.google.com'],
-          privateKey: '',
-          shortIds: [''],
-        },
-      },
-      null,
-      2,
-    ),
+    stream: {
+      ...defaultStreamSettings,
+      network: 'tcp',
+      security: 'reality',
+      realityFlow: 'xtls-rprx-vision',
+    },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
-    name: 'VLESS + WS',
+    name: 'VLESS + WS + TLS',
     protocol: 'vless',
     defaultPort: 443,
     settings: JSON.stringify({ decryption: 'none' }, null, 2),
-    stream: JSON.stringify(
-      {
-        network: 'ws',
-        security: 'none',
-        wsSettings: { path: '/ws' },
-      },
-      null,
-      2,
-    ),
+    stream: {
+      ...defaultStreamSettings,
+      network: 'ws',
+      security: 'tls',
+      wsPath: '/ws',
+      tlsFingerprint: 'chrome',
+    },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
     name: 'VMess',
     protocol: 'vmess',
-    defaultPort: 443,
+    defaultPort: 8443,
     settings: JSON.stringify({}, null, 2),
-    stream: JSON.stringify({ network: 'tcp', security: 'none' }, null, 2),
+    stream: { ...defaultStreamSettings, network: 'tcp', security: 'none' },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
@@ -73,15 +76,7 @@ const presets: Preset[] = [
     protocol: 'trojan',
     defaultPort: 443,
     settings: JSON.stringify({}, null, 2),
-    stream: JSON.stringify(
-      {
-        network: 'tcp',
-        security: 'tls',
-        tlsSettings: { serverName: 'example.com' },
-      },
-      null,
-      2,
-    ),
+    stream: { ...defaultStreamSettings, network: 'tcp', security: 'tls' },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
@@ -89,7 +84,7 @@ const presets: Preset[] = [
     protocol: 'shadowsocks',
     defaultPort: 8388,
     settings: JSON.stringify({ method: 'aes-256-gcm' }, null, 2),
-    stream: JSON.stringify({ network: 'tcp', security: 'none' }, null, 2),
+    stream: { ...defaultStreamSettings, network: 'tcp', security: 'none' },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
 ]
@@ -156,7 +151,6 @@ export function Inbounds() {
         </div>
       </div>
 
-      {/* Пресеты */}
       <div className="mb-6">
         <div className="text-sm text-neutral-400 mb-2">Создать из пресета:</div>
         <div className="flex flex-wrap gap-2">
@@ -263,7 +257,7 @@ export function Inbounds() {
   )
 }
 
-// --- Форма инбаунда ---
+// --- Форма ---
 
 interface InboundFormProps {
   inbound?: Inbound
@@ -274,16 +268,75 @@ interface InboundFormProps {
 
 function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
   const isEdit = !!inbound
+
   const [tag, setTag] = useState(inbound?.tag ?? '')
   const [protocol, setProtocol] = useState(inbound?.protocol ?? preset?.protocol ?? 'vless')
-  const [port, setPort] = useState(String(inbound?.port ?? preset?.defaultPort ?? 443))
+  const [port, setPort] = useState(String(inbound?.port ?? preset?.defaultPort ?? 8443))
   const [listen, setListen] = useState(inbound?.listen ?? '0.0.0.0')
   const [settings, setSettings] = useState(inbound?.settings_json ?? preset?.settings ?? '{}')
-  const [stream, setStream] = useState(inbound?.stream_json ?? preset?.stream ?? '{}')
   const [sniffing, setSniffing] = useState(inbound?.sniffing_json ?? preset?.sniffing ?? '{}')
   const [enabled, setEnabled] = useState(inbound?.enabled ?? true)
+
+  // Stream settings — структура вместо сырого JSON.
+  const [stream, setStream] = useState<StreamSettings>(() => {
+    if (inbound) return parseStreamJSON(inbound.stream_json)
+    if (preset) return preset.stream
+    return { ...defaultStreamSettings }
+  })
+
+  // Показать расширенные настройки (сырой JSON).
+  const [advanced, setAdvanced] = useState(false)
+  const [advancedJSON, setAdvancedJSON] = useState('')
+
+  // Кнопки генерации.
+  const [generating, setGenerating] = useState(false)
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  async function handleGenerateKeys() {
+    setGenerating(true)
+    setError('')
+    try {
+      const pair = await generateX25519()
+      setStream((s) => ({ ...s, realityPrivateKey: pair.private_key }))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка генерации ключей')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function handleGenerateShortID() {
+    setGenerating(true)
+    setError('')
+    try {
+      const id = await generateShortID()
+      setStream((s) => ({
+        ...s,
+        realityShortIds: s.realityShortIds ? s.realityShortIds + ',' + id : id,
+      }))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка генерации shortId')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  function openAdvanced() {
+    setAdvancedJSON(buildStreamJSON(stream))
+    setAdvanced(true)
+  }
+
+  function applyAdvanced() {
+    try {
+      const parsed = parseStreamJSON(advancedJSON)
+      setStream(parsed)
+      setAdvanced(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Некорректный JSON')
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -296,7 +349,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       port: Number(port),
       listen,
       settings_json: settings,
-      stream_json: stream,
+      stream_json: buildStreamJSON(stream),
       sniffing_json: sniffing,
       enabled,
     }
@@ -321,7 +374,8 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       onClose={onClose}
       wide
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Основное */}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Тег">
             <input
@@ -370,32 +424,287 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
           </Field>
         </div>
 
-        <Field label="Settings (JSON)">
-          <textarea
-            value={settings}
-            onChange={(e) => setSettings(e.target.value)}
-            rows={6}
-            className={inputClass + ' font-mono text-xs'}
+        {/* Транспорт */}
+        <Section title="Транспорт">
+          <Radio
+            name="network"
+            value={stream.network}
+            onChange={(v) => setStream({ ...stream, network: v as StreamSettings['network'] })}
+            options={[
+              { value: 'tcp', label: 'TCP' },
+              { value: 'ws', label: 'WebSocket' },
+              { value: 'grpc', label: 'gRPC' },
+              { value: 'xhttp', label: 'XHTTP' },
+            ]}
           />
-        </Field>
 
-        <Field label="Stream Settings (JSON)">
-          <textarea
-            value={stream}
-            onChange={(e) => setStream(e.target.value)}
-            rows={8}
-            className={inputClass + ' font-mono text-xs'}
-          />
-        </Field>
+          {stream.network === 'tcp' && (
+            <Field label="HTTP-маскировка">
+              <select
+                value={stream.tcpHeaderType}
+                onChange={(e) =>
+                  setStream({ ...stream, tcpHeaderType: e.target.value as 'none' | 'http' })
+                }
+                className={inputClass}
+              >
+                <option value="none">Нет</option>
+                <option value="http">HTTP</option>
+              </select>
+            </Field>
+          )}
 
-        <Field label="Sniffing (JSON)">
-          <textarea
-            value={sniffing}
-            onChange={(e) => setSniffing(e.target.value)}
-            rows={3}
-            className={inputClass + ' font-mono text-xs'}
+          {stream.network === 'ws' && (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Path">
+                <input
+                  value={stream.wsPath}
+                  onChange={(e) => setStream({ ...stream, wsPath: e.target.value })}
+                  placeholder="/ws"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Host (опционально)">
+                <input
+                  value={stream.wsHost}
+                  onChange={(e) => setStream({ ...stream, wsHost: e.target.value })}
+                  placeholder="example.com"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+          )}
+
+          {stream.network === 'grpc' && (
+            <Field label="Service Name">
+              <input
+                value={stream.grpcServiceName}
+                onChange={(e) => setStream({ ...stream, grpcServiceName: e.target.value })}
+                placeholder="grpc-service"
+                className={inputClass}
+              />
+            </Field>
+          )}
+
+          {stream.network === 'xhttp' && (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Path">
+                <input
+                  value={stream.xhttpPath}
+                  onChange={(e) => setStream({ ...stream, xhttpPath: e.target.value })}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Mode">
+                <select
+                  value={stream.xhttpMode}
+                  onChange={(e) => setStream({ ...stream, xhttpMode: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="auto">auto</option>
+                  <option value="packet-up">packet-up</option>
+                  <option value="stream-up">stream-up</option>
+                  <option value="stream-one">stream-one</option>
+                </select>
+              </Field>
+            </div>
+          )}
+        </Section>
+
+        {/* Безопасность */}
+        <Section title="Безопасность">
+          <Radio
+            name="security"
+            value={stream.security}
+            onChange={(v) => setStream({ ...stream, security: v as StreamSettings['security'] })}
+            options={[
+              { value: 'none', label: 'Нет' },
+              { value: 'tls', label: 'TLS' },
+              { value: 'reality', label: 'REALITY' },
+            ]}
           />
-        </Field>
+
+          {stream.security === 'tls' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Server Name (SNI)">
+                  <input
+                    value={stream.tlsServerName}
+                    onChange={(e) => setStream({ ...stream, tlsServerName: e.target.value })}
+                    placeholder="example.com"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Fingerprint">
+                  <select
+                    value={stream.tlsFingerprint}
+                    onChange={(e) => setStream({ ...stream, tlsFingerprint: e.target.value })}
+                    className={inputClass}
+                  >
+                    <option value="chrome">chrome</option>
+                    <option value="firefox">firefox</option>
+                    <option value="safari">safari</option>
+                    <option value="random">random</option>
+                  </select>
+                </Field>
+              </div>
+              <Field label="ALPN (через запятую)">
+                <input
+                  value={stream.tlsAlpn}
+                  onChange={(e) => setStream({ ...stream, tlsAlpn: e.target.value })}
+                  placeholder="h2,http/1.1"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+          )}
+
+          {stream.security === 'reality' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Dest (сайт-донор)">
+                  <input
+                    value={stream.realityDest}
+                    onChange={(e) => setStream({ ...stream, realityDest: e.target.value })}
+                    placeholder="www.google.com:443"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Server Names (SNI, через запятую)">
+                  <input
+                    value={stream.realityServerNames}
+                    onChange={(e) => setStream({ ...stream, realityServerNames: e.target.value })}
+                    placeholder="www.google.com"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Private Key">
+                <div className="flex gap-2">
+                  <input
+                    value={stream.realityPrivateKey}
+                    onChange={(e) => setStream({ ...stream, realityPrivateKey: e.target.value })}
+                    placeholder="нажмите «Сгенерировать»"
+                    className={inputClass + ' flex-1 font-mono text-xs'}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateKeys}
+                    disabled={generating}
+                    className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm rounded px-3 py-2 whitespace-nowrap disabled:opacity-50"
+                  >
+                    {generating ? '...' : 'Сгенерировать'}
+                  </button>
+                </div>
+              </Field>
+
+              <Field label="Short IDs (через запятую)">
+                <div className="flex gap-2">
+                  <input
+                    value={stream.realityShortIds}
+                    onChange={(e) => setStream({ ...stream, realityShortIds: e.target.value })}
+                    placeholder="нажмите «Сгенерировать»"
+                    className={inputClass + ' flex-1 font-mono text-xs'}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateShortID}
+                    disabled={generating}
+                    className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm rounded px-3 py-2 whitespace-nowrap disabled:opacity-50"
+                  >
+                    + ShortID
+                  </button>
+                </div>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Fingerprint">
+                  <select
+                    value={stream.realityFingerprint}
+                    onChange={(e) => setStream({ ...stream, realityFingerprint: e.target.value })}
+                    className={inputClass}
+                  >
+                    <option value="chrome">chrome</option>
+                    <option value="firefox">firefox</option>
+                    <option value="safari">safari</option>
+                    <option value="random">random</option>
+                  </select>
+                </Field>
+                <Field label="Flow">
+                  <select
+                    value={stream.realityFlow}
+                    onChange={(e) => setStream({ ...stream, realityFlow: e.target.value })}
+                    className={inputClass}
+                  >
+                    <option value="">(нет)</option>
+                    <option value="xtls-rprx-vision">xtls-rprx-vision</option>
+                  </select>
+                </Field>
+              </div>
+            </div>
+          )}
+        </Section>
+
+        {/* Расширенные настройки */}
+        <div>
+          {!advanced ? (
+            <button
+              type="button"
+              onClick={openAdvanced}
+              className="text-xs text-neutral-500 hover:text-white"
+            >
+              ▼ Расширенные настройки (JSON)
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setAdvanced(false)}
+                className="text-xs text-neutral-500 hover:text-white"
+              >
+                ▲ Скрыть расширенные настройки
+              </button>
+              <textarea
+                value={advancedJSON}
+                onChange={(e) => setAdvancedJSON(e.target.value)}
+                rows={12}
+                className={inputClass + ' font-mono text-xs'}
+              />
+              <button
+                type="button"
+                onClick={applyAdvanced}
+                className="bg-neutral-800 hover:bg-neutral-700 text-white text-xs rounded px-3 py-1.5"
+              >
+                Применить JSON
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Settings и Sniffing — оставим как JSON, но в свёрнутом виде */}
+        <details className="text-sm">
+          <summary className="text-neutral-500 cursor-pointer hover:text-white">
+            Settings и Sniffing (JSON)
+          </summary>
+          <div className="space-y-3 mt-3">
+            <Field label="Settings (JSON)">
+              <textarea
+                value={settings}
+                onChange={(e) => setSettings(e.target.value)}
+                rows={4}
+                className={inputClass + ' font-mono text-xs'}
+              />
+            </Field>
+            <Field label="Sniffing (JSON)">
+              <textarea
+                value={sniffing}
+                onChange={(e) => setSniffing(e.target.value)}
+                rows={3}
+                className={inputClass + ' font-mono text-xs'}
+              />
+            </Field>
+          </div>
+        </details>
 
         <label className="flex items-center gap-2 text-sm text-neutral-300">
           <input
@@ -429,14 +738,63 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
   )
 }
 
+// --- Вспомогательные компоненты ---
+
 const inputClass =
   'w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white outline-none focus:border-neutral-600'
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="text-sm text-neutral-400 block mb-1">{label}</span>
       {children}
     </label>
+  )
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="border border-neutral-800 rounded p-4 space-y-3">
+      <div className="text-sm text-neutral-400 font-medium">{title}</div>
+      {children}
+    </div>
+  )
+}
+
+function Radio({
+  name,
+  value,
+  onChange,
+  options,
+}: {
+  name: string
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string }[]
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => (
+        <label
+          key={o.value}
+          className={
+            'text-sm rounded px-3 py-1.5 cursor-pointer transition-colors ' +
+            (value === o.value
+              ? 'bg-white text-black'
+              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700')
+          }
+        >
+          <input
+            type="radio"
+            name={name}
+            value={o.value}
+            checked={value === o.value}
+            onChange={() => onChange(o.value)}
+            className="sr-only"
+          />
+          {o.label}
+        </label>
+      ))}
+    </div>
   )
 }
