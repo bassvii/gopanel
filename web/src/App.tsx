@@ -5,6 +5,7 @@ import { Header } from './components/Header'
 import { me } from './api/auth'
 import { RouterProvider, useRouter, type Route } from './lib/router'
 import { Users } from './pages/Users'
+import { Inbounds } from './pages/Inbounds'
 
 const titles: Record<Route['name'], string> = {
   login: 'Вход',
@@ -20,6 +21,8 @@ function Page({ route }: { route: Route['name'] }) {
   switch (route) {
     case 'users':
       return <Users />
+    case 'inbounds':
+      return <Inbounds />
     default:
       return (
         <div className="flex-1 flex items-center justify-center">
