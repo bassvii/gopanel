@@ -164,6 +164,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/inbounds/", s.handleInbound)
 	s.mux.HandleFunc(s.secret+"/users", s.handleUsers)
 	s.mux.HandleFunc(s.secret+"/users/", s.handleUserRoutes)
+	s.mux.HandleFunc(s.secret+"/stats/summary", s.handleStatsSummary)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)

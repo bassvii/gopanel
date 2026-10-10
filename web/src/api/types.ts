@@ -55,3 +55,12 @@ export interface LoginResponse {
   needs_totp?: boolean
   error?: string
 }
+
+export interface StatsSummary {
+  users_total: number
+  users_enabled: number
+  inbounds_total: number
+  inbounds_enabled: number
+  traffic_total_bytes: number
+  traffic_used_bytes: number
+}

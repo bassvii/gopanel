@@ -6,6 +6,7 @@ import { me } from './api/auth'
 import { RouterProvider, useRouter, type Route } from './lib/router'
 import { Users } from './pages/Users'
 import { Inbounds } from './pages/Inbounds'
+import { Dashboard } from './pages/Dashboard'
 
 const titles: Record<Route['name'], string> = {
   login: 'Вход',
@@ -19,6 +20,8 @@ const titles: Record<Route['name'], string> = {
 
 function Page({ route }: { route: Route['name'] }) {
   switch (route) {
+    case 'dashboard':
+      return <Dashboard />
     case 'users':
       return <Users />
     case 'inbounds':
