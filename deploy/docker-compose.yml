@@ -1,0 +1,27 @@
+services:
+  gopanel:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: gopanel:latest
+    container_name: gopanel
+    restart: unless-stopped
+    ports:
+      # Проброс только на localhost хоста.
+      - "127.0.0.1:44559:44559"
+    environment:
+      - GOPANEL_LISTEN=0.0.0.0
+      - GOPANEL_ALLOW_NON_LOOPBACK=1
+      - GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db
+      # Первый админ (только при первом запуске).
+      - GOPANEL_ADMIN_USER=admin
+      - GOPANEL_ADMIN_PASSWORD=verylongpassword123
+    volumes:
+      - gopanel-data:/var/lib/gopanel
+    # Xray внутри контейнера слушает 0.0.0.0 и порты инбаундов.
+    # Чтобы клиенты могли подключаться, пробрасываем порты инбаундов.
+    # Например, для VLESS на 443:
+    # - "443:443"
+
+volumes:
+  gopanel-data:

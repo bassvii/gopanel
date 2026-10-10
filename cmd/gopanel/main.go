@@ -265,6 +265,7 @@ func runServe(args []string) error {
 		Listen:   cfg.Listen,
 		Port:     port,
 		BasePath: basePath,
+		AllowNonLoopback: cfg.AllowNonLoopback,
 	}, conn, log)
 	if err != nil {
 		return err

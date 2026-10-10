@@ -37,6 +37,7 @@ type Config struct {
 	Listen   string
 	Port     int
 	BasePath string
+	AllowNonLoopback bool
 }
 
 // New создаёт сервер.
@@ -45,9 +46,13 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 		return nil, errors.New("listen address is required")
 	}
 	ip := net.ParseIP(cfg.Listen)
-	if ip == nil || !ip.IsLoopback() {
-		return nil, fmt.Errorf("admin listener must be on loopback, got %q", cfg.Listen)
+	if ip == nil {
+   	    return nil, fmt.Errorf("invalid listen address: %q", cfg.Listen)
 	}
+	if !ip.IsLoopback() && !cfg.AllowNonLoopback {
+        return nil, fmt.Errorf("admin listener must be on loopback, got %q", cfg.Listen)
+	}
+
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		return nil, fmt.Errorf("port must be 0..65535, got %d", cfg.Port)
 	}

@@ -22,6 +22,7 @@ type Config struct {
 	XrayBin  string `json:"xray_bin"`
 	LogLevel string `json:"log_level"`
 	XrayConfigPath string `json:"xray_config_path"`
+	AllowNonLoopback bool `json:"allow_non_loopback"`
 }
 
 // Default возвращает конфиг со значениями по умолчанию.
@@ -34,6 +35,7 @@ func Default() Config {
 		XrayBin:  "/usr/local/bin/xray",
 		LogLevel: "info",
 		XrayConfigPath: "/tmp/gopanel-xray.json",
+		AllowNonLoopback: false,
 	}
 }
 
@@ -95,6 +97,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("GOPANEL_XRAY_CONFIG"); v != "" {
 		cfg.XrayConfigPath = v
+	}
+	if os.Getenv("GOPANEL_ALLOW_NON_LOOPBACK") == "1" {
+		cfg.AllowNonLoopback = true
 	}
 }
 
