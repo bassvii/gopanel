@@ -1,8 +1,14 @@
 import { test, expect } from '@playwright/test'
 
-const BASE_PATH = '/c7f75b36c0d98fcf0fda64f6532215dd'  // ← замените на ваш
+const BASE_PATH = process.env.E2E_BASE_PATH ?? '/c7f75b36c0d98fcf0fda64f6532215dd'
 const ADMIN_USER = 'admin'
-const ADMIN_PASS = 'rusins1l0a0v1i1k995yandex.ru'
+const ADMIN_PASS = 'verygoonlongpass123'
+
+test.use({
+  baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? '44559'}`,
+})
+
+
 
 test.describe('smoke', () => {
   test('открывается форма логина', async ({ page }) => {
