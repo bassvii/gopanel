@@ -14,7 +14,7 @@ import type { LinkEntry, User } from '../api/types'
 import { listInbounds } from '../api/inbounds'
 import { attachUserToInbound } from '../api/users'
 import type { Inbound } from '../api/types'
-
+import { QRModal } from '../components/QRModal'
 
 export function Users() {
   const [users, setUsers] = useState<User[]>([])
@@ -326,6 +326,8 @@ function LinksModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [inbounds, setInbounds] = useState<Inbound[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [qrFor, setQrFor] = useState<LinkEntry | null>(null)
+  const [qrLoading, setQrLoading] = useState(false)
 
   useEffect(() => {
     listInbounds().then(setInbounds).catch(() => {})
@@ -357,6 +359,25 @@ function LinksModal({ user, onClose }: { user: User; onClose: () => void }) {
     }
   }
 
+  async function showQR(link: LinkEntry) {
+    setQrLoading(true)
+    try {
+      const withQR = await getUserLinks(user.id, address, true)
+      console.log('withQR:', withQR)   // ← посмотреть в F12 Console
+      const found = withQR.find((l) => l.inbound_id === link.inbound_id)
+      console.log('found:', found)     // ← и это
+      if (found?.qr_base64) {
+        setQrFor(found)
+      } else {
+        alert('QR не сгенерирован')
+      }
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Ошибка QR')
+    } finally {
+      setQrLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (address) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,72 +387,95 @@ function LinksModal({ user, onClose }: { user: User; onClose: () => void }) {
   const available = inbounds.filter((inb) => !attachedIds.has(inb.id))
 
   return (
-    <Modal title={`Ссылки для «${user.name}»`} onClose={onClose} wide>
-      <div className="space-y-4">
-        <Field label="Адрес сервера (IP или домен)">
-          <div className="flex gap-2">
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="1.2.3.4 или example.com"
-              className="w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white outline-none focus:border-neutral-600 flex-1"
-            />
-            <button
-              onClick={() => load()}
-              className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
-            >
-              Загрузить
-            </button>
-          </div>
-        </Field>
-
-        {error && <div className="text-sm text-red-400">{error}</div>}
-        {loading && <div className="text-neutral-500 text-sm">Загрузка...</div>}
-
-        {links.length === 0 && !loading && !error && (
-          <div className="text-neutral-500 text-sm text-center py-4">
-            У пользователя нет привязанных инбаундов.
-          </div>
-        )}
-
-        {links.map((l) => (
-          <div key={l.inbound_id} className="border border-neutral-800 rounded p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-white">
-                {l.protocol} <span className="text-neutral-500">· {l.tag}</span>
-              </div>
+    <>
+      <Modal title={`Ссылки для «${user.name}»`} onClose={onClose} wide>
+        <div className="space-y-4">
+          <Field label="Адрес сервера (IP или домен)">
+            <div className="flex gap-2">
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="1.2.3.4 или example.com"
+                className={inputClass + ' flex-1'}
+              />
               <button
-                onClick={() => navigator.clipboard.writeText(l.url)}
-                className="text-xs text-neutral-400 hover:text-white"
+                onClick={() => load()}
+                className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
               >
-                Копировать
+                Загрузить
               </button>
             </div>
-            {l.error ? (
-              <div className="text-xs text-red-400">{l.error}</div>
-            ) : (
-              <div className="text-xs text-neutral-500 break-all font-mono">{l.url}</div>
-            )}
-          </div>
-        ))}
+          </Field>
 
-        {available.length > 0 && (
-          <div className="border-t border-neutral-800 pt-4">
-            <div className="text-sm text-neutral-400 mb-2">Привязать инбаунд:</div>
-            <div className="flex flex-wrap gap-2">
-              {available.map((inb) => (
-                <button
-                  key={inb.id}
-                  onClick={() => attach(inb.id)}
-                  className="text-xs bg-neutral-800 hover:bg-neutral-700 text-white rounded px-3 py-1.5"
-                >
-                  + {inb.tag} ({inb.protocol})
-                </button>
-              ))}
+          {error && <div className="text-sm text-red-400">{error}</div>}
+          {loading && <div className="text-neutral-500 text-sm">Загрузка...</div>}
+
+          {links.length === 0 && !loading && !error && (
+            <div className="text-neutral-500 text-sm text-center py-4">
+              У пользователя нет привязанных инбаундов.
             </div>
-          </div>
-        )}
-      </div>
-    </Modal>
+          )}
+
+          {links.map((l) => (
+            <div key={l.inbound_id} className="border border-neutral-800 rounded p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-white">
+                  {l.protocol} <span className="text-neutral-500">· {l.tag}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => showQR(l)}
+                    disabled={qrLoading}
+                    className="text-xs text-neutral-400 hover:text-white disabled:opacity-50"
+                  >
+                    QR
+                  </button>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(l.url)}
+                    className="text-xs text-neutral-400 hover:text-white"
+                  >
+                    Копировать
+                  </button>
+                </div>
+              </div>
+              {l.error ? (
+                <div className="text-xs text-red-400">{l.error}</div>
+              ) : (
+                <div className="text-xs text-neutral-500 break-all font-mono">{l.url}</div>
+              )}
+            </div>
+          ))}
+
+          {available.length > 0 && (
+            <div className="border-t border-neutral-800 pt-4">
+              <div className="text-sm text-neutral-400 mb-2">Привязать инбаунд:</div>
+              <div className="flex flex-wrap gap-2">
+                {available.map((inb) => (
+                  <button
+                    key={inb.id}
+                    onClick={() => attach(inb.id)}
+                    className="text-xs bg-neutral-800 hover:bg-neutral-700 text-white rounded px-3 py-1.5"
+                  >
+                    + {inb.tag} ({inb.protocol})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {qrFor && qrFor.qr_base64 && (
+        <QRModal
+          title={`${qrFor.protocol} · ${qrFor.tag}`}
+          url={qrFor.url}
+          qrBase64={qrFor.qr_base64}
+          onClose={() => setQrFor(null)}
+        />
+      )}
+    </>
   )
 }
+
+const inputClass =
+  'w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white outline-none focus:border-neutral-600'
