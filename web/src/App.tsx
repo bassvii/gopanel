@@ -8,6 +8,7 @@ import { Users } from './pages/Users'
 import { Inbounds } from './pages/Inbounds'
 import { Dashboard } from './pages/Dashboard'
 import { Settings } from './pages/Settings'
+import { Audit } from './pages/Audit'
 
 const titles: Record<Route['name'], string> = {
   login: 'Вход',
@@ -29,6 +30,8 @@ function Page({ route }: { route: Route['name'] }) {
       return <Inbounds />
     case 'settings':
       return <Settings />
+    case 'audit':
+      return <Audit />
     default:
       return (
         <div className="flex-1 flex items-center justify-center">

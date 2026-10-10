@@ -17,7 +17,7 @@ export function Dashboard() {
     Promise.all([getStatsSummary(), getAudit(5)])
       .then(([s, a]) => {
         setSummary(s)
-        setAudit(a)
+        setAudit(a.entries)
       })
       .catch((err) => {
         setError(err instanceof ApiError ? err.message : 'Ошибка загрузки')
