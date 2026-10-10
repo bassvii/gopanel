@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bassvii/gopanel"
 	"github.com/bassvii/gopanel/internal/api"
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -24,7 +25,6 @@ import (
 	"github.com/bassvii/gopanel/internal/core/xray"
 	"github.com/bassvii/gopanel/internal/db"
 	"github.com/bassvii/gopanel/internal/stats"
-	"github.com/bassvii/gopanel"
 )
 
 const (
@@ -246,7 +246,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	// 6. Ядро Xray.
+	// 6. Xray обязателен.
 	core, err := xray.New(cfg.XrayBin, cfg.XrayConfigPath, log)
 	if err != nil {
 		return fmt.Errorf("init xray core: %w", err)
@@ -256,13 +256,11 @@ func runServe(args []string) error {
 	if err != nil {
 		return fmt.Errorf("build config: %w", err)
 	}
-
-	// 7. Запуск Xray.
 	if err := core.ApplyConfig(ctx, configData); err != nil {
 		log.Error("xray start failed", "err", err)
 	}
 
-	// 8. Админский HTTP-сервер (нужен для ReloadCh).
+	// 7. Админский HTTP-сервер.
 	srv, err := api.New(api.Config{
 		Listen:   cfg.Listen,
 		Port:     port,
@@ -272,8 +270,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	// Вшитый фронтенд. Если web/dist не собран, webFS == nil,
-	// и корень отдаёт 404.
+	// 8. Вшитый фронтенд.
 	if webFS := gopanel.WebFS(); webFS != nil {
 		srv.SetWebFS(webFS)
 		log.Info("frontend embedded")
@@ -281,7 +278,7 @@ func runServe(args []string) error {
 		log.Warn("frontend not embedded, / will return 404")
 	}
 
-	// 9. Сборщик статистики (не опрашивает, если ядро не запущено).
+	// 9. Сборщик статистики.
 	collector := stats.New(
 		conn,
 		cfg.XrayBin,
@@ -295,7 +292,7 @@ func runServe(args []string) error {
 	// 10. Цикл перезагрузки конфига.
 	go reloadLoop(ctx, srv, core, conn, log)
 
-	// 11. Применение лимитов — теперь srv существует.
+	// 11. Применение лимитов.
 	go stats.RunLimitEnforcer(ctx, conn, srv.ReloadSignal(), 30*time.Second, log)
 
 	// 12. HTTP-сервер в горутине.

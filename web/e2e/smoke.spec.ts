@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test'
 
-const BASE_PATH = process.env.E2E_BASE_PATH ?? '/c7f75b36c0d98fcf0fda64f6532215dd'
+const BASE_PATH = process.env.E2E_BASE_PATH ?? '/31f8deab50d969b054ee04aac41bea75'
 const ADMIN_USER = 'admin'
-const ADMIN_PASS = 'verygoonlongpass123'
+const ADMIN_PASS = 'verylongpassword123'
 
 test.use({
   baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? '44559'}`,
