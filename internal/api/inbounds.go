@@ -13,6 +13,38 @@ import (
 	"github.com/bassvii/gopanel/internal/db"
 )
 
+type inboundDTO struct {
+	ID           int64  `json:"id"`
+	Tag          string `json:"tag"`
+	Protocol     string `json:"protocol"`
+	Port         int    `json:"port"`
+	Listen       string `json:"listen"`
+	SettingsJSON string `json:"settings_json"`
+	StreamJSON   string `json:"stream_json"`
+	SniffingJSON string `json:"sniffing_json"`
+	Enabled      bool   `json:"enabled"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+func toInboundDTO(in db.Inbound) inboundDTO {
+	var created int64
+	if !in.CreatedAt.IsZero() {
+		created = in.CreatedAt.Unix()
+	}
+	return inboundDTO{
+		ID:           in.ID,
+		Tag:          in.Tag,
+		Protocol:     in.Protocol,
+		Port:         in.Port,
+		Listen:       in.Listen,
+		SettingsJSON: in.SettingsJSON,
+		StreamJSON:   in.StreamJSON,
+		SniffingJSON: in.SniffingJSON,
+		Enabled:      in.Enabled,
+		CreatedAt:    created,
+	}
+}
+
 type inboundPayload struct {
 	Tag          string `json:"tag"`
 	Protocol     string `json:"protocol"`
@@ -32,13 +64,17 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-	case http.MethodGet:
-		list, err := db.ListInbounds(s.db)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"inbounds": list})
+		case http.MethodGet:
+			list, err := db.ListInbounds(s.db)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			dtos := make([]inboundDTO, 0, len(list))
+			for _, in := range list {
+				dtos = append(dtos, toInboundDTO(in))
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"inbounds": dtos})
 
 	case http.MethodPost:
 		if !s.requireCSRF(w, r, sess) {
@@ -88,17 +124,17 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-	case http.MethodGet:
-		in, err := db.GetInbound(s.db, id)
-		if errors.Is(err, db.ErrNotFound) {
-			http.NotFound(w, r)
-			return
-		}
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, in)
+		case http.MethodGet:
+			in, err := db.GetInbound(s.db, id)
+			if errors.Is(err, db.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, http.StatusOK, toInboundDTO(in))
 
 	case http.MethodPut:
 		if !s.requireCSRF(w, r, sess) {

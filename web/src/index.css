@@ -15,3 +15,7 @@ body {
 #root {
   min-height: 100vh;
 }
+
+.input {
+  @apply w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white outline-none focus:border-neutral-600;
+}

@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { Header } from './components/Header'
 import { me } from './api/auth'
 import { RouterProvider, useRouter, type Route } from './lib/router'
+import { Users } from './pages/Users'
 
 const titles: Record<Route['name'], string> = {
   login: 'Вход',
@@ -16,14 +17,19 @@ const titles: Record<Route['name'], string> = {
 }
 
 function Page({ route }: { route: Route['name'] }) {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-white mb-2">{titles[route]}</h2>
-        <p className="text-neutral-500">Скоро здесь будет раздел</p>
-      </div>
-    </div>
-  )
+  switch (route) {
+    case 'users':
+      return <Users />
+    default:
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-white mb-2">{titles[route]}</h2>
+            <p className="text-neutral-500">Скоро здесь будет раздел</p>
+          </div>
+        </div>
+      )
+  }
 }
 
 function Shell({ onLogout }: { onLogout: () => void }) {

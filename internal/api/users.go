@@ -16,6 +16,42 @@ import (
 	"github.com/bassvii/gopanel/internal/db"
 )
 
+// userDTO — представление пользователя для API.
+type userDTO struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	Enabled     bool   `json:"enabled"`
+	QuotaBytes  int64  `json:"quota_bytes"`
+	UsedBytes   int64  `json:"used_bytes"`
+	ExpiresAt   int64  `json:"expires_at"`
+	DeviceLimit int    `json:"device_limit"`
+	Note        string `json:"note"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+func toUserDTO(u db.User) userDTO {
+	var expires, created int64
+	if !u.ExpiresAt.IsZero() {
+		expires = u.ExpiresAt.Unix()
+	}
+	if !u.CreatedAt.IsZero() {
+		created = u.CreatedAt.Unix()
+	}
+	return userDTO{
+		ID:          u.ID,
+		Name:        u.Name,
+		Email:       u.Email,
+		Enabled:     u.Enabled,
+		QuotaBytes:  u.QuotaBytes,
+		UsedBytes:   u.UsedBytes,
+		ExpiresAt:   expires,
+		DeviceLimit: u.DeviceLimit,
+		Note:        u.Note,
+		CreatedAt:   created,
+	}
+}
+
 type userPayload struct {
 	Name        string `json:"name"`
 	Email       string `json:"email"`
@@ -33,13 +69,17 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-	case http.MethodGet:
-		list, err := db.ListUsers(s.db)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"users": list})
+		case http.MethodGet:
+			list, err := db.ListUsers(s.db)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			dtos := make([]userDTO, 0, len(list))
+			for _, u := range list {
+				dtos = append(dtos, toUserDTO(u))
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"users": dtos})
 
 	case http.MethodPost:
 		if !s.requireCSRF(w, r, sess) {
@@ -97,17 +137,17 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-	case http.MethodGet:
-		u, err := db.GetUser(s.db, id)
-		if errors.Is(err, db.ErrNotFound) {
-			http.NotFound(w, r)
-			return
-		}
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusOK, u)
+		case http.MethodGet:
+			u, err := db.GetUser(s.db, id)
+			if errors.Is(err, db.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, http.StatusOK, toUserDTO(u))
 
 	case http.MethodPut:
 		if !s.requireCSRF(w, r, sess) {
