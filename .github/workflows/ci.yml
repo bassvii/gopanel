@@ -80,6 +80,16 @@ jobs:
       - name: Build backend
         run: go build -o bin/gopanel ./cmd/gopanel
 
+      - name: Install Xray
+        run: |
+          sudo apt-get update && sudo apt-get install -y unzip
+          curl -L -o /tmp/xray.zip \
+            "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
+          unzip -o /tmp/xray.zip -d /tmp/xray
+          sudo mv /tmp/xray/xray /usr/local/bin/xray
+          sudo chmod +x /usr/local/bin/xray
+          xray version
+
       - name: Install Playwright browsers
         working-directory: web
         run: npx playwright install --with-deps chromium
@@ -93,7 +103,7 @@ jobs:
         id: panel
         run: |
           ./bin/gopanel run --db /tmp/gp.db > /tmp/gopanel.log 2>&1 &
-          sleep 5
+          sleep 10
           cat /tmp/gopanel.log
           LINE=$(grep "admin listener started" /tmp/gopanel.log | head -1)
           PORT=$(echo "$LINE" | grep -oP 'addr=127.0.0.1:\K\d+')
