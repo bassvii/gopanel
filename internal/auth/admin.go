@@ -78,3 +78,42 @@ func GetAdminByUsername(conn *sql.DB, username string) (Admin, error) {
 	a.CreatedAt = time.Unix(createdAt, 0)
 	return a, nil
 }
+
+// ChangePassword меняет пароль администратора, проверяя старый.
+func ChangePassword(conn *sql.DB, adminID int64, oldPassword, newPassword string) error {
+	admin, err := GetAdminByID(conn, adminID)
+	if err != nil {
+		return err
+	}
+	if err := VerifyPassword(oldPassword, admin.PasswordHash); err != nil {
+		return errors.New("old password is incorrect")
+	}
+	hash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Exec(`UPDATE admins SET password_hash = ? WHERE id = ?`, hash, adminID)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
+}
+
+// GetAdminByID возвращает админа по ID.
+func GetAdminByID(conn *sql.DB, id int64) (Admin, error) {
+	var a Admin
+	var createdAt int64
+	err := conn.QueryRow(
+		`SELECT id, username, password_hash, totp_secret, role, created_at
+		 FROM admins WHERE id = ?`,
+		id,
+	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.Role, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return a, sql.ErrNoRows
+	}
+	if err != nil {
+		return a, fmt.Errorf("get admin: %w", err)
+	}
+	a.CreatedAt = time.Unix(createdAt, 0)
+	return a, nil
+}

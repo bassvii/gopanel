@@ -165,6 +165,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/users", s.handleUsers)
 	s.mux.HandleFunc(s.secret+"/users/", s.handleUserRoutes)
 	s.mux.HandleFunc(s.secret+"/stats/summary", s.handleStatsSummary)
+	s.mux.HandleFunc(s.secret+"/me/password", s.handleChangePassword)
+	s.mux.HandleFunc(s.secret+"/me/sessions", s.handleSessions)
+	s.mux.HandleFunc(s.secret+"/me/sessions/", s.handleSession)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)

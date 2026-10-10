@@ -140,3 +140,42 @@ func tokenHash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
+
+// ListSessions возвращает все сессии администратора.
+func ListSessions(conn *sql.DB, adminID int64) ([]Session, error) {
+	rows, err := conn.Query(
+		`SELECT id, admin_id, ip, user_agent, last_seen, expires_at, csrf_token
+		 FROM sessions WHERE admin_id = ? ORDER BY last_seen DESC`,
+		adminID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Session
+	for rows.Next() {
+		var (
+			s         Session
+			lastSeen  int64
+			expiresAt int64
+		)
+		if err := rows.Scan(&s.ID, &s.AdminID, &s.IP, &s.UserAgent,
+			&lastSeen, &expiresAt, &s.CSRFToken); err != nil {
+			return nil, err
+		}
+		s.LastSeen = time.Unix(lastSeen, 0)
+		s.ExpiresAt = time.Unix(expiresAt, 0)
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// DeleteOtherSessions удаляет все сессии администратора, кроме указанной.
+func DeleteOtherSessions(conn *sql.DB, adminID int64, keepSessionID string) error {
+	_, err := conn.Exec(
+		`DELETE FROM sessions WHERE admin_id = ? AND id != ?`,
+		adminID, keepSessionID,
+	)
+	return err
+}

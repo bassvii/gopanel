@@ -64,3 +64,12 @@ export interface StatsSummary {
   traffic_total_bytes: number
   traffic_used_bytes: number
 }
+
+export interface Session {
+  id: string
+  ip: string
+  user_agent: string
+  last_seen: number
+  expires_at: number
+  current: boolean
+}
