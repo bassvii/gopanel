@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { changePassword, listSessions, revokeSession, revokeOtherSessions } from '../api/me'
 import { ApiError } from '../api/client'
 import type { Session } from '../api/types'
+import { downloadBackup } from '../api/backup'
 
 export function Settings() {
   return (
@@ -13,6 +14,7 @@ export function Settings() {
 
       <PasswordSection />
       <SessionsSection />
+      <BackupSection />
       <PanicSection />
     </div>
   )
@@ -189,6 +191,26 @@ function SessionsSection() {
           )}
         </div>
       )}
+    </Section>
+  )
+}
+
+function BackupSection() {
+  return (
+    <Section title="Резервные копии" description="Скачать дамп базы данных">
+      <div className="text-sm text-neutral-400 space-y-3">
+        <p>
+          Дамп содержит пользователей, инбаунды, настройки и журнал аудита.
+          Трафик (таблица <code>traffic</code>) не сохраняется — при восстановлении
+          счётчики начнутся с нуля.
+        </p>
+        <button
+          onClick={downloadBackup}
+          className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
+        >
+          Скачать бэкап
+        </button>
+      </div>
     </Section>
   )
 }

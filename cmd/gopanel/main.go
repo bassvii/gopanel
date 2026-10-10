@@ -16,7 +16,9 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"path/filepath"
 
+	"github.com/bassvii/gopanel/internal/backup"
 	"github.com/bassvii/gopanel"
 	"github.com/bassvii/gopanel/internal/api"
 	"github.com/bassvii/gopanel/internal/audit"
@@ -53,6 +55,8 @@ func run(args []string) error {
 		return runResetPassword(args[1:])
 	case "config":
 		return runConfig(args[1:])
+	case "backup":
+		return runBackup(args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -504,4 +508,43 @@ func buildConfigFromDB(conn *sql.DB) ([]byte, error) {
 		return nil, err
 	}
 	return xray.MarshalConfig(cfg)
+}
+
+func runBackup(args []string) error {
+	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
+	var (
+		dbPath  = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+		outPath = fs.String("out", "", "куда сохранить дамп (по умолчанию рядом с БД)")
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		return err
+	}
+	if *dbPath != "" {
+		cfg.DBPath = *dbPath
+	}
+
+	conn, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	out := *outPath
+	if out == "" {
+		dir := filepath.Dir(cfg.DBPath)
+		out = filepath.Join(dir, backup.BackupName())
+	}
+
+	if err := backup.Dump(context.Background(), conn, out); err != nil {
+		return err
+	}
+
+	info, _ := os.Stat(out)
+	fmt.Printf("backup created: %s (%d bytes)\n", out, info.Size())
+	return nil
 }
