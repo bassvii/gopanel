@@ -1,12 +1,13 @@
+import { LayoutDashboard, Users, Server, Activity, Settings, FileText } from 'lucide-react'
 import { useRouter, type Route } from '../lib/router'
 
-const items: { name: Route['name']; label: string; icon: string }[] = [
-  { name: 'dashboard', label: 'Панель', icon: '■' },
-  { name: 'users', label: 'Пользователи', icon: '●' },
-  { name: 'inbounds', label: 'Инбаунды', icon: '◆' },
-  { name: 'traffic', label: 'Трафик', icon: '▲' },
-  { name: 'settings', label: 'Настройки', icon: '⚙' },
-  { name: 'audit', label: 'Аудит', icon: '≡' },
+const items: { name: Route['name']; label: string; Icon: typeof Users }[] = [
+  { name: 'dashboard', label: 'Панель', Icon: LayoutDashboard },
+  { name: 'users', label: 'Пользователи', Icon: Users },
+  { name: 'inbounds', label: 'Инбаунды', Icon: Server },
+  { name: 'traffic', label: 'Трафик', Icon: Activity },
+  { name: 'settings', label: 'Настройки', Icon: Settings },
+  { name: 'audit', label: 'Аудит', Icon: FileText },
 ]
 
 export function Sidebar() {
@@ -19,13 +20,13 @@ export function Sidebar() {
         <div className="text-xs text-neutral-500">панель управления</div>
       </div>
 
-      <nav className="flex-1 p-2">
-        {items.map((item) => {
-          const active = route.name === item.name
+      <nav className="flex-1 p-2 space-y-1">
+        {items.map(({ name, label, Icon }) => {
+          const active = route.name === name
           return (
             <button
-              key={item.name}
-              onClick={() => navigate({ name: item.name })}
+              key={name}
+              onClick={() => navigate({ name })}
               className={
                 'w-full text-left px-3 py-2 rounded flex items-center gap-3 text-sm transition-colors ' +
                 (active
@@ -33,8 +34,8 @@ export function Sidebar() {
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900')
               }
             >
-              <span className="w-4 text-center opacity-60">{item.icon}</span>
-              <span>{item.label}</span>
+              <Icon size={16} className="shrink-0 opacity-80" />
+              <span>{label}</span>
             </button>
           )
         })}
