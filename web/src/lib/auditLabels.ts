@@ -14,6 +14,9 @@ const labels: Record<string, string> = {
   inbound_create: 'Создан инбаунд',
   inbound_update: 'Изменён инбаунд',
   inbound_delete: 'Удалён инбаунд',
+  password_change: 'Пароль изменён',
+  sessions_revoked: 'Завершены все сессии, кроме текущей',
+  session_revoked: 'Сессия завершена',
 }
 
 export function auditLabel(action: string): string {
