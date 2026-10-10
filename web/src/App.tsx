@@ -1,38 +1,43 @@
 import { useEffect, useState } from 'react'
 import { Login } from './pages/Login'
+import { Sidebar } from './components/Sidebar'
+import { Header } from './components/Header'
 import { me } from './api/auth'
-import { RouterProvider, useRouter } from './lib/router'
+import { RouterProvider, useRouter, type Route } from './lib/router'
 
-function Placeholder({ title }: { title: string }) {
+const titles: Record<Route['name'], string> = {
+  login: 'Вход',
+  dashboard: 'Панель',
+  users: 'Пользователи',
+  inbounds: 'Инбаунды',
+  traffic: 'Трафик',
+  settings: 'Настройки',
+  audit: 'Аудит',
+}
+
+function Page({ route }: { route: Route['name'] }) {
   return (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="flex-1 flex items-center justify-center">
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-white mb-2">{title}</h1>
+        <h2 className="text-2xl font-bold text-white mb-2">{titles[route]}</h2>
         <p className="text-neutral-500">Скоро здесь будет раздел</p>
       </div>
     </div>
   )
 }
 
-function Shell() {
+function Shell({ onLogout }: { onLogout: () => void }) {
   const { route } = useRouter()
 
-  switch (route.name) {
-    case 'dashboard':
-      return <Placeholder title="Панель" />
-    case 'users':
-      return <Placeholder title="Пользователи" />
-    case 'inbounds':
-      return <Placeholder title="Инбаунды" />
-    case 'traffic':
-      return <Placeholder title="Трафик" />
-    case 'settings':
-      return <Placeholder title="Настройки" />
-    case 'audit':
-      return <Placeholder title="Аудит" />
-    default:
-      return <Placeholder title="Не найдено" />
-  }
+  return (
+    <div className="min-h-screen flex bg-neutral-900">
+      <Sidebar />
+      <div className="flex-1 flex flex-col">
+        <Header title={titles[route.name]} onLogout={onLogout} />
+        <Page route={route.name} />
+      </div>
+    </div>
+  )
 }
 
 function Inner() {
@@ -56,7 +61,7 @@ function Inner() {
     return <Login onSuccess={() => setAuthed(true)} />
   }
 
-  return <Shell />
+  return <Shell onLogout={() => setAuthed(false)} />
 }
 
 export default function App() {
