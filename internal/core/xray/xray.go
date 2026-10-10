@@ -159,3 +159,39 @@ func (c *Core) IsRunning() bool {
 func (c *Core) LastError() error {
 	return c.process.LastError()
 }
+
+// X25519KeyPair — пара ключей для REALITY.
+type X25519KeyPair struct {
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+}
+
+var (
+	x25519PrivateRe = regexp.MustCompile(`(?i)Private\s*Key:\s*(\S+)`)
+	x25519PublicRe  = regexp.MustCompile(`(?i)(?:Public\s*Key|Password\s*\(PublicKey\)):\s*(\S+)`)
+)
+
+// GenerateX25519 запускает `xray x25519` и возвращает пару ключей.
+func (c *Core) GenerateX25519(ctx context.Context) (X25519KeyPair, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, c.binPath, "x25519")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return X25519KeyPair{}, fmt.Errorf("xray x25519 failed: %w\n%s", err, out)
+	}
+
+	text := string(out)
+	priv := x25519PrivateRe.FindStringSubmatch(text)
+	pub := x25519PublicRe.FindStringSubmatch(text)
+
+	if len(priv) < 2 || len(pub) < 2 {
+		return X25519KeyPair{}, fmt.Errorf("cannot parse x25519 output: %q", text)
+	}
+
+	return X25519KeyPair{
+		PrivateKey: priv[1],
+		PublicKey:  pub[1],
+	}, nil
+}

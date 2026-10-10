@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/bassvii/gopanel/internal/core/xray"
 )
 
 // Server — админский HTTP-сервер.
@@ -24,6 +26,7 @@ type Server struct {
 	log    *slog.Logger
 	http   *http.Server
 	mux    *http.ServeMux
+	core   *xray.Core
 
 	secret   string
 	addr     string
@@ -151,6 +154,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
+// SetCore устанавливает ядро Xray (для API генерации ключей).
+func (s *Server) SetCore(c *xray.Core) {
+	s.core = c
+}
+
 // routes регистрирует все маршруты. Вызывается при создании
 // и при SetWebFS (чтобы перерегистрировать корневой маршрут).
 func (s *Server) routes() {
@@ -174,6 +182,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/me/sessions", s.handleSessions)
 	s.mux.HandleFunc(s.secret+"/me/sessions/", s.handleSession)
 	s.mux.HandleFunc(s.secret+"/backup/download", s.handleBackupDownload)
+	s.mux.HandleFunc(s.secret+"/xray/x25519", s.handleX25519)
+	s.mux.HandleFunc(s.secret+"/xray/shortid", s.handleShortID)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)

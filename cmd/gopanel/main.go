@@ -275,6 +275,8 @@ func runServe(args []string) error {
 		return err
 	}
 
+	srv.SetCore(core)
+
 	// 8. Вшитый фронтенд.
 	if webFS := gopanel.WebFS(); webFS != nil {
 		srv.SetWebFS(webFS)
