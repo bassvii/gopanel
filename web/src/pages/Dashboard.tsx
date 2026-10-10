@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getStatsSummary } from '../api/stats'
 import { getAudit } from '../api/audit'
-import { formatBytes } from '../lib/format'
+import { capitalize, formatBytes } from '../lib/format'
 import { useRouter } from '../lib/router'
 import { ApiError } from '../api/client'
 import type { AuditEntry, StatsSummary } from '../api/types'
@@ -101,7 +101,7 @@ export function Dashboard() {
             {audit.map((e) => (
               <li key={e.id} className="px-5 py-3 flex items-center justify-between text-sm">
                 <div className="flex items-center gap-3">
-                  <span className="text-neutral-300">{auditLabel(e.action)}</span>
+                  <span className="text-neutral-300">{capitalize(e.action_ru || auditLabel(e.action))}</span>
                   {e.target && <span className="text-neutral-500">· {e.target}</span>}
                 </div>
                 <div className="text-xs text-neutral-600">

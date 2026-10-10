@@ -8,8 +8,8 @@ export interface AuditResponse {
   offset: number
 }
 
-export async function getAudit(limit = 100, offset = 0, action = ''): Promise<AuditResponse> {
+export async function getAudit(limit = 100, offset = 0, q = ''): Promise<AuditResponse> {
   const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
-  if (action) qs.set('action', action)
+  if (q) qs.set('q', q)
   return request<AuditResponse>(`/audit?${qs}`)
 }

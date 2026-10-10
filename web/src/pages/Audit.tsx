@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { getAudit } from '../api/audit'
-import { auditLabel } from '../lib/auditLabels'
 import { ApiError } from '../api/client'
 import type { AuditEntry } from '../api/types'
+import { capitalize } from '../lib/format'
 
 const PAGE_SIZE = 50
 
@@ -10,47 +10,50 @@ export function Audit() {
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
-  const [actionFilter, setActionFilter] = useState('')
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  async function load(off: number, action: string) {
-    setLoading(true)
-    setError('')
-    try {
-      const res = await getAudit(PAGE_SIZE, off, action)
-      setEntries(res.entries)
-      setTotal(res.total)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Ошибка загрузки')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Debounce: применяем запрос через 300 мс после последнего ввода.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQuery(query)
+      setOffset(0)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query])
 
   useEffect(() => {
-    load(offset, actionFilter)
-  }, [offset, actionFilter])
+    setLoading(true)
+    setError('')
+    getAudit(PAGE_SIZE, offset, debouncedQuery)
+      .then((res) => {
+        setEntries(res.entries)
+        setTotal(res.total)
+      })
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : 'Ошибка загрузки')
+      })
+      .finally(() => setLoading(false))
+  }, [offset, debouncedQuery])
 
   const pages = Math.ceil(total / PAGE_SIZE)
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1
 
   return (
     <div className="flex-1 p-6 overflow-y-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">Аудит</h2>
           <p className="text-sm text-neutral-500">{total} событий</p>
         </div>
         <input
           type="text"
-          placeholder="Фильтр по действию"
-          value={actionFilter}
-          onChange={(e) => {
-            setOffset(0)
-            setActionFilter(e.target.value)
-          }}
-          className="bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white text-sm outline-none focus:border-neutral-600"
+          placeholder="Поиск по действию, объекту, IP"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white text-sm outline-none focus:border-neutral-600 w-72"
         />
       </div>
 
@@ -82,7 +85,7 @@ export function Audit() {
                     <td className="px-4 py-2 text-neutral-400 whitespace-nowrap">
                       {new Date(e.ts * 1000).toLocaleString('ru-RU')}
                     </td>
-                    <td className="px-4 py-2 text-white">{auditLabel(e.action)}</td>
+                    <td className="px-4 py-2 text-white">{capitalize(e.action_ru || e.action)}</td>
                     <td className="px-4 py-2 text-neutral-400">{e.target || '—'}</td>
                     <td className="px-4 py-2 text-neutral-500 font-mono text-xs">{e.ip}</td>
                   </tr>

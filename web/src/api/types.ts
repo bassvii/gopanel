@@ -39,6 +39,7 @@ export interface AuditEntry {
   id: number
   admin_id: number
   action: string
+  action_ru: string
   target: string
   ip: string
   ts: number
