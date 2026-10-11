@@ -17,6 +17,7 @@ import {
 } from '../lib/streamSettings'
 import type { Inbound } from '../api/types'
 import { toast } from 'sonner'
+import { useConfirm } from '../hooks/useConfirm'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -97,6 +98,8 @@ export function Inbounds() {
   const [editing, setEditing] = useState<Inbound | null>(null)
   const [creating, setCreating] = useState<Preset | null>(null)
 
+  const { confirm, dialog } = useConfirm()
+
   async function reload() {
     setLoading(true)
     setError('')
@@ -114,7 +117,14 @@ export function Inbounds() {
   }, [])
 
   async function handleDelete(inb: Inbound) {
-    if (!confirm(`Удалить инбаунд «${inb.tag}»?`)) return
+    const ok = await confirm({
+      title: 'Удалить инбаунд?',
+      message: `Инбаунд «${inb.tag}» будет удалён вместе со всеми связями с пользователями. Это действие нельзя отменить.`,
+      confirmLabel: 'Удалить',
+      danger: true,
+    })
+    if (!ok) return
+
     try {
       await deleteInbound(inb.id)
       await reload()
@@ -144,119 +154,123 @@ export function Inbounds() {
   }
 
   return (
-    <div className="flex-1 p-6 overflow-y-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Инбаунды</h2>
-          <p className="text-sm text-neutral-500">
-            {inbounds.length} {inbounds.length === 1 ? 'запись' : 'записей'}
-          </p>
+    <>
+      <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Инбаунды</h2>
+            <p className="text-sm text-neutral-500">
+              {inbounds.length} {inbounds.length === 1 ? 'запись' : 'записей'}
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="mb-6">
-        <div className="text-sm text-neutral-400 mb-2">Создать из пресета:</div>
-        <div className="flex flex-wrap gap-2">
-          {presets.map((p) => (
-            <button
-              key={p.name}
-              onClick={() => setCreating(p)}
-              className="text-sm bg-neutral-800 hover:bg-neutral-700 text-white rounded px-3 py-1.5"
-            >
-              + {p.name}
-            </button>
-          ))}
+        <div className="mb-6">
+          <div className="text-sm text-neutral-400 mb-2">Создать из пресета:</div>
+          <div className="flex flex-wrap gap-2">
+            {presets.map((p) => (
+              <button
+                key={p.name}
+                onClick={() => setCreating(p)}
+                className="text-sm bg-neutral-800 hover:bg-neutral-700 text-white rounded px-3 py-1.5"
+              >
+                + {p.name}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
+            {error}
+          </div>
+        )}
 
-      {loading ? (
-        <div className="text-neutral-500">Загрузка...</div>
-      ) : inbounds.length === 0 ? (
-        <div className="text-neutral-500 text-center py-16">
-          Инбаундов пока нет. Создайте первый из пресета выше.
-        </div>
-      ) : (
-        <div className="border border-neutral-800 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-950 text-neutral-400">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Тег</th>
-                <th className="text-left px-4 py-3 font-medium">Протокол</th>
-                <th className="text-left px-4 py-3 font-medium">Порт</th>
-                <th className="text-left px-4 py-3 font-medium">Listen</th>
-                <th className="text-left px-4 py-3 font-medium">Статус</th>
-                <th className="text-right px-4 py-3 font-medium">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inbounds.map((inb) => (
-                <tr key={inb.id} className="border-t border-neutral-800 hover:bg-neutral-900/40">
-                  <td className="px-4 py-3 text-white">{inb.tag}</td>
-                  <td className="px-4 py-3 text-neutral-400">{inb.protocol}</td>
-                  <td className="px-4 py-3 text-neutral-400">{inb.port}</td>
-                  <td className="px-4 py-3 text-neutral-400">{inb.listen}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleEnabled(inb)}
-                      className={
-                        'text-xs px-2 py-1 rounded ' +
-                        (inb.enabled
-                          ? 'text-green-400 hover:bg-green-950/30'
-                          : 'text-red-400 hover:bg-red-950/30')
-                      }
-                    >
-                      {inb.enabled ? 'включён' : 'отключён'}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setEditing(inb)}
-                      className="text-neutral-400 hover:text-white text-xs mr-3"
-                    >
-                      Изменить
-                    </button>
-                    <button
-                      onClick={() => handleDelete(inb)}
-                      className="text-red-400 hover:text-red-300 text-xs"
-                    >
-                      Удалить
-                    </button>
-                  </td>
+        {loading ? (
+          <div className="text-neutral-500">Загрузка...</div>
+        ) : inbounds.length === 0 ? (
+          <div className="text-neutral-500 text-center py-16">
+            Инбаундов пока нет. Создайте первый из пресета выше.
+          </div>
+        ) : (
+          <div className="border border-neutral-800 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-950 text-neutral-400">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium">Тег</th>
+                  <th className="text-left px-4 py-3 font-medium">Протокол</th>
+                  <th className="text-left px-4 py-3 font-medium">Порт</th>
+                  <th className="text-left px-4 py-3 font-medium">Listen</th>
+                  <th className="text-left px-4 py-3 font-medium">Статус</th>
+                  <th className="text-right px-4 py-3 font-medium">Действия</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {inbounds.map((inb) => (
+                  <tr key={inb.id} className="border-t border-neutral-800 hover:bg-neutral-900/40">
+                    <td className="px-4 py-3 text-white">{inb.tag}</td>
+                    <td className="px-4 py-3 text-neutral-400">{inb.protocol}</td>
+                    <td className="px-4 py-3 text-neutral-400">{inb.port}</td>
+                    <td className="px-4 py-3 text-neutral-400">{inb.listen}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleEnabled(inb)}
+                        className={
+                          'text-xs px-2 py-1 rounded ' +
+                          (inb.enabled
+                            ? 'text-green-400 hover:bg-green-950/30'
+                            : 'text-red-400 hover:bg-red-950/30')
+                        }
+                      >
+                        {inb.enabled ? 'включён' : 'отключён'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setEditing(inb)}
+                        className="text-neutral-400 hover:text-white text-xs mr-3"
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        onClick={() => handleDelete(inb)}
+                        className="text-red-400 hover:text-red-300 text-xs"
+                      >
+                        Удалить
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {creating && (
-        <InboundForm
-          preset={creating}
-          onClose={() => setCreating(null)}
-          onSaved={async () => {
-            setCreating(null)
-            await reload()
-          }}
-        />
-      )}
+        {creating && (
+          <InboundForm
+            preset={creating}
+            onClose={() => setCreating(null)}
+            onSaved={async () => {
+              setCreating(null)
+              await reload()
+            }}
+          />
+        )}
 
-      {editing && (
-        <InboundForm
-          inbound={editing}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null)
-            await reload()
-          }}
-        />
-      )}
-    </div>
+        {editing && (
+          <InboundForm
+            inbound={editing}
+            onClose={() => setEditing(null)}
+            onSaved={async () => {
+              setEditing(null)
+              await reload()
+            }}
+          />
+        )}
+      </div>
+
+      {dialog}
+    </>
   )
 }
 
@@ -280,20 +294,15 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
   const [sniffing, setSniffing] = useState(inbound?.sniffing_json ?? preset?.sniffing ?? '{}')
   const [enabled, setEnabled] = useState(inbound?.enabled ?? true)
 
-  // Stream settings — структура вместо сырого JSON.
   const [stream, setStream] = useState<StreamSettings>(() => {
     if (inbound) return parseStreamJSON(inbound.stream_json)
     if (preset) return preset.stream
     return { ...defaultStreamSettings }
   })
 
-  // Показать расширенные настройки (сырой JSON).
   const [advanced, setAdvanced] = useState(false)
   const [advancedJSON, setAdvancedJSON] = useState('')
-
-  // Кнопки генерации.
   const [generating, setGenerating] = useState(false)
-
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 

@@ -16,6 +16,7 @@ import { attachUserToInbound } from '../api/users'
 import type { Inbound } from '../api/types'
 import { QRModal } from '../components/QRModal'
 import { toast } from 'sonner'
+import { useConfirm } from '../hooks/useConfirm'
 
 export function Users() {
   const [users, setUsers] = useState<User[]>([])
@@ -25,6 +26,8 @@ export function Users() {
   const [editing, setEditing] = useState<User | null>(null)
   const [creating, setCreating] = useState(false)
   const [linksFor, setLinksFor] = useState<User | null>(null)
+
+  const { confirm, dialog } = useConfirm()
 
   async function reload() {
     setLoading(true)
@@ -43,7 +46,14 @@ export function Users() {
   }, [])
 
   async function handleDelete(u: User) {
-    if (!confirm(`Удалить пользователя «${u.name}»?`)) return
+    const ok = await confirm({
+      title: 'Удалить пользователя?',
+      message: `Пользователь «${u.name}» будет удалён вместе со всеми связями и трафиком. Это действие нельзя отменить.`,
+      confirmLabel: 'Удалить',
+      danger: true,
+    })
+    if (!ok) return
+
     try {
       await deleteUser(u.id)
       await reload()
@@ -54,116 +64,120 @@ export function Users() {
   }
 
   return (
-    <div className="flex-1 p-6 overflow-y-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Пользователи</h2>
-          <p className="text-sm text-neutral-500">
-            {users.length} {users.length === 1 ? 'запись' : 'записей'}
-          </p>
+    <>
+      <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Пользователи</h2>
+            <p className="text-sm text-neutral-500">
+              {users.length} {users.length === 1 ? 'запись' : 'записей'}
+            </p>
+          </div>
+          <button
+            onClick={() => setCreating(true)}
+            className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
+          >
+            + Создать
+          </button>
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
-        >
-          + Создать
-        </button>
+
+        {error && (
+          <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-neutral-500">Загрузка...</div>
+        ) : users.length === 0 ? (
+          <div className="text-neutral-500 text-center py-16">
+            Пользователей пока нет. Создайте первого.
+          </div>
+        ) : (
+          <div className="border border-neutral-800 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-950 text-neutral-400">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium">Имя</th>
+                  <th className="text-left px-4 py-3 font-medium">Email</th>
+                  <th className="text-left px-4 py-3 font-medium">Трафик</th>
+                  <th className="text-left px-4 py-3 font-medium">Срок</th>
+                  <th className="text-left px-4 py-3 font-medium">Статус</th>
+                  <th className="text-right px-4 py-3 font-medium">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id} className="border-t border-neutral-800 hover:bg-neutral-900/40">
+                    <td className="px-4 py-3 text-white">{u.name}</td>
+                    <td className="px-4 py-3 text-neutral-400">{u.email}</td>
+                    <td className="px-4 py-3 text-neutral-400">
+                      {formatBytes(u.used_bytes)}
+                      {u.quota_bytes > 0 && ` / ${formatBytes(u.quota_bytes)}`}
+                    </td>
+                    <td className="px-4 py-3 text-neutral-400">{formatDate(u.expires_at)}</td>
+                    <td className="px-4 py-3">
+                      {u.enabled ? (
+                        <span className="text-green-400 text-xs">включён</span>
+                      ) : (
+                        <span className="text-red-400 text-xs">отключён</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setLinksFor(u)}
+                        className="text-neutral-400 hover:text-white text-xs mr-3"
+                      >
+                        Ссылки
+                      </button>
+                      <button
+                        onClick={() => setEditing(u)}
+                        className="text-neutral-400 hover:text-white text-xs mr-3"
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        onClick={() => handleDelete(u)}
+                        className="text-red-400 hover:text-red-300 text-xs"
+                      >
+                        Удалить
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {creating && (
+          <UserForm
+            onClose={() => setCreating(false)}
+            onSaved={async () => {
+              setCreating(false)
+              await reload()
+            }}
+          />
+        )}
+
+        {editing && (
+          <UserForm
+            user={editing}
+            onClose={() => setEditing(null)}
+            onSaved={async () => {
+              setEditing(null)
+              await reload()
+            }}
+          />
+        )}
+
+        {linksFor && (
+          <LinksModal user={linksFor} onClose={() => setLinksFor(null)} />
+        )}
       </div>
 
-      {error && (
-        <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="text-neutral-500">Загрузка...</div>
-      ) : users.length === 0 ? (
-        <div className="text-neutral-500 text-center py-16">
-          Пользователей пока нет. Создайте первого.
-        </div>
-      ) : (
-        <div className="border border-neutral-800 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-950 text-neutral-400">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Имя</th>
-                <th className="text-left px-4 py-3 font-medium">Email</th>
-                <th className="text-left px-4 py-3 font-medium">Трафик</th>
-                <th className="text-left px-4 py-3 font-medium">Срок</th>
-                <th className="text-left px-4 py-3 font-medium">Статус</th>
-                <th className="text-right px-4 py-3 font-medium">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-t border-neutral-800 hover:bg-neutral-900/40">
-                  <td className="px-4 py-3 text-white">{u.name}</td>
-                  <td className="px-4 py-3 text-neutral-400">{u.email}</td>
-                  <td className="px-4 py-3 text-neutral-400">
-                    {formatBytes(u.used_bytes)}
-                    {u.quota_bytes > 0 && ` / ${formatBytes(u.quota_bytes)}`}
-                  </td>
-                  <td className="px-4 py-3 text-neutral-400">{formatDate(u.expires_at)}</td>
-                  <td className="px-4 py-3">
-                    {u.enabled ? (
-                      <span className="text-green-400 text-xs">включён</span>
-                    ) : (
-                      <span className="text-red-400 text-xs">отключён</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setLinksFor(u)}
-                      className="text-neutral-400 hover:text-white text-xs mr-3"
-                    >
-                      Ссылки
-                    </button>
-                    <button
-                      onClick={() => setEditing(u)}
-                      className="text-neutral-400 hover:text-white text-xs mr-3"
-                    >
-                      Изменить
-                    </button>
-                    <button
-                      onClick={() => handleDelete(u)}
-                      className="text-red-400 hover:text-red-300 text-xs"
-                    >
-                      Удалить
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {creating && (
-        <UserForm
-          onClose={() => setCreating(false)}
-          onSaved={async () => {
-            setCreating(false)
-            await reload()
-          }}
-        />
-      )}
-
-      {editing && (
-        <UserForm
-          user={editing}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null)
-            await reload()
-          }}
-        />
-      )}
-
-      {linksFor && (
-        <LinksModal user={linksFor} onClose={() => setLinksFor(null)} />
-      )}
-    </div>
+      {dialog}
+    </>
   )
 }
 
