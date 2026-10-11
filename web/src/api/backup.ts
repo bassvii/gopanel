@@ -1,6 +1,5 @@
 import { getBasePath } from '../lib/basePath'
 import { toast } from 'sonner'
-import { getBasePath } from '../lib/basePath'
 
 export function downloadBackup() {
   const base = getBasePath()
