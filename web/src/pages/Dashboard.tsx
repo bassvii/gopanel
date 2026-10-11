@@ -6,6 +6,7 @@ import { useRouter } from '../lib/router'
 import { ApiError } from '../api/client'
 import type { AuditEntry, StatsSummary } from '../api/types'
 import { auditLabel } from '../lib/auditLabels'
+import { CardSkeleton } from '../components/Skeleton'
 
 export function Dashboard() {
   const { navigate } = useRouter()
@@ -58,28 +59,21 @@ export function Dashboard() {
       </div>
 
       {/* Карточки */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Пользователи"
-          value={summary ? `${summary.users_enabled} / ${summary.users_total}` : '—'}
-          subtitle="активных / всего"
-        />
-        <StatCard
-          title="Инбаунды"
-          value={summary ? `${summary.inbounds_enabled} / ${summary.inbounds_total}` : '—'}
-          subtitle="включённых / всего"
-        />
-        <StatCard
-          title="Использовано"
-          value={summary ? formatBytes(summary.traffic_used_bytes) : '—'}
-          subtitle="суммарный трафик"
-        />
-        <StatCard
-          title="Общая квота"
-          value={summary ? formatBytes(summary.traffic_total_bytes) : '—'}
-          subtitle="лимиты всех пользователей"
-        />
-      </div>
+      {summary === null ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard title="Пользователи" value={`${summary.users_enabled} / ${summary.users_total}`} subtitle="активных / всего" />
+          <StatCard title="Инбаунды" value={`${summary.inbounds_enabled} / ${summary.inbounds_total}`} subtitle="включённых / всего" />
+          <StatCard title="Использовано" value={formatBytes(summary.traffic_used_bytes)} subtitle="суммарный трафик" />
+          <StatCard title="Общая квота" value={formatBytes(summary.traffic_total_bytes)} subtitle="лимиты всех пользователей" />
+        </div>
+      )}
 
       {/* Последние события */}
       <div className="bg-neutral-950 border border-neutral-800 rounded-lg">

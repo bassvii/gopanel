@@ -3,6 +3,7 @@ import { getAudit } from '../api/audit'
 import { ApiError } from '../api/client'
 import type { AuditEntry } from '../api/types'
 import { capitalize } from '../lib/format'
+import { TableSkeleton } from '../components/Skeleton'
 
 const PAGE_SIZE = 50
 
@@ -64,7 +65,7 @@ export function Audit() {
       )}
 
       {loading ? (
-        <div className="text-neutral-500">Загрузка...</div>
+        <TableSkeleton rows={10} cols={4} />
       ) : entries.length === 0 ? (
         <div className="text-neutral-500 text-center py-16">Событий не найдено</div>
       ) : (

@@ -17,6 +17,7 @@ import type { Inbound } from '../api/types'
 import { QRModal } from '../components/QRModal'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
+import { TableSkeleton } from '../components/Skeleton'
 
 export function Users() {
   const [users, setUsers] = useState<User[]>([])
@@ -88,7 +89,7 @@ export function Users() {
         )}
 
         {loading ? (
-          <div className="text-neutral-500">Загрузка...</div>
+          <TableSkeleton rows={5} cols={6} />
         ) : users.length === 0 ? (
           <div className="text-neutral-500 text-center py-16">
             Пользователей пока нет. Создайте первого.

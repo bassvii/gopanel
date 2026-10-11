@@ -18,6 +18,7 @@ import {
 import type { Inbound } from '../api/types'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
+import { TableSkeleton } from '../components/Skeleton'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -187,7 +188,7 @@ export function Inbounds() {
         )}
 
         {loading ? (
-          <div className="text-neutral-500">Загрузка...</div>
+          <TableSkeleton rows={5} cols={6} />
         ) : inbounds.length === 0 ? (
           <div className="text-neutral-500 text-center py-16">
             Инбаундов пока нет. Создайте первый из пресета выше.
