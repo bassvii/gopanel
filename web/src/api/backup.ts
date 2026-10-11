@@ -1,11 +1,11 @@
 import { getBasePath } from '../lib/basePath'
+import { toast } from 'sonner'
+import { getBasePath } from '../lib/basePath'
 
-// downloadBackup скачивает дамп через браузер.
 export function downloadBackup() {
   const base = getBasePath()
   const url = `${base}/backup/download`
 
-  // fetch + blob → чтобы поддержать авторизацию.
   fetch(url, {
     credentials: 'same-origin',
   })
@@ -19,8 +19,9 @@ export function downloadBackup() {
       link.download = `gopanel-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.db`
       link.click()
       URL.revokeObjectURL(link.href)
+      toast.success('Бэкап скачан')
     })
     .catch((err) => {
-      alert('Ошибка загрузки бэкапа: ' + err.message)
+      toast.error('Ошибка загрузки бэкапа: ' + err.message)
     })
 }

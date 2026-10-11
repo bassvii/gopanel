@@ -16,6 +16,7 @@ import {
   type StreamSettings,
 } from '../lib/streamSettings'
 import type { Inbound } from '../api/types'
+import { toast } from 'sonner'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -117,8 +118,9 @@ export function Inbounds() {
     try {
       await deleteInbound(inb.id)
       await reload()
+      toast.success('Инбаунд удалён')
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка удаления')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка удаления')
     }
   }
 
@@ -135,8 +137,9 @@ export function Inbounds() {
         enabled: !inb.enabled,
       })
       await reload()
+      toast.success(inb.enabled ? 'Инбаунд отключён' : 'Инбаунд включён')
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка переключения')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка переключения')
     }
   }
 
@@ -300,6 +303,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
     try {
       const pair = await generateX25519()
       setStream((s) => ({ ...s, realityPrivateKey: pair.private_key }))
+      toast.success('Ключи сгенерированы')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ошибка генерации ключей')
     } finally {
@@ -316,6 +320,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
         ...s,
         realityShortIds: s.realityShortIds ? s.realityShortIds + ',' + id : id,
       }))
+      toast.success('Short ID сгенерирован')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ошибка генерации shortId')
     } finally {
@@ -357,8 +362,10 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
     try {
       if (isEdit && inbound) {
         await updateInbound(inbound.id, input)
+        toast.success('Инбаунд обновлён')
       } else {
         await createInbound(input)
+        toast.success('Инбаунд создан')
       }
       onSaved()
     } catch (err) {

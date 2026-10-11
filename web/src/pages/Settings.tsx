@@ -3,6 +3,7 @@ import { changePassword, listSessions, revokeSession, revokeOtherSessions } from
 import { ApiError } from '../api/client'
 import type { Session } from '../api/types'
 import { downloadBackup } from '../api/backup'
+import { toast } from 'sonner'
 
 export function Settings() {
   return (
@@ -136,7 +137,7 @@ function SessionsSection() {
       await revokeSession(id)
       await reload()
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка')
     }
   }
 
@@ -146,7 +147,7 @@ function SessionsSection() {
       await revokeOtherSessions()
       await reload()
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка')
     }
   }
 

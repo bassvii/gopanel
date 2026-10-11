@@ -15,6 +15,7 @@ import { listInbounds } from '../api/inbounds'
 import { attachUserToInbound } from '../api/users'
 import type { Inbound } from '../api/types'
 import { QRModal } from '../components/QRModal'
+import { toast } from 'sonner'
 
 export function Users() {
   const [users, setUsers] = useState<User[]>([])
@@ -46,8 +47,9 @@ export function Users() {
     try {
       await deleteUser(u.id)
       await reload()
+      toast.success('Пользователь удалён')
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка удаления')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка удаления')
     }
   }
 
@@ -205,8 +207,10 @@ function UserForm({ user, onClose, onSaved }: UserFormProps) {
     try {
       if (isEdit && user) {
         await updateUser(user.id, input)
+        toast.success('Пользователь обновлён')
       } else {
         await createUser(input)
+        toast.success('Пользователь создан')
       }
       onSaved()
     } catch (err) {
@@ -353,9 +357,13 @@ function LinksModal({ user, onClose }: { user: User; onClose: () => void }) {
   async function attach(inboundId: number) {
     try {
       await attachUserToInbound(user.id, inboundId)
-      await load()
+      toast.success('Инбаунд привязан')
+      // Пробуем загрузить ссылки, но не считаем это частью привязки.
+      if (address) {
+        await load()
+      }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка привязки')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка привязки')
     }
   }
 
@@ -369,10 +377,10 @@ function LinksModal({ user, onClose }: { user: User; onClose: () => void }) {
       if (found?.qr_base64) {
         setQrFor(found)
       } else {
-        alert('QR не сгенерирован')
+        toast.error('QR не сгенерирован')
       }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка QR')
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка QR')
     } finally {
       setQrLoading(false)
     }
