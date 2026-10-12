@@ -222,7 +222,7 @@ var (
 // GenerateVlessEnc запускает `xray vlessenc` и возвращает первый вариант (X25519).
 // Первый вариант — короткие строки, лучше совместимы с клиентами.
 // ML-KEM-768 (пост-квантовый) даёт огромные строки — не помещаются в URL.
-func (c *Core) GenerateVlessEnc(ctx context.Context) (VlessEncResult, error) {
+func (c *Core) GenerateVlessEnc() (VlessEncResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

@@ -93,7 +93,7 @@ func (s *Server) handleVlessEnc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.core.GenerateVlessEnc(r.Context())
+	res, err := s.core.GenerateVlessEnc()
 	if err != nil {
 		s.log.Error("vlessenc generation failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
