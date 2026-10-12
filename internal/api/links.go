@@ -85,14 +85,15 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 
 		remark := user.Name + " · " + in.Tag
 		url, err := links.Generate(links.Input{
-			Protocol:       in.Protocol,
-			Tag:            in.Tag,
-			Address:        address,
-			Port:           in.Port,
-			CredentialJSON: ui.CredentialJSON,
-			SettingsJSON:   in.SettingsJSON,
-			StreamJSON:     in.StreamJSON,
-			Remark:         remark,
+			Protocol:         in.Protocol,
+			Tag:              in.Tag,
+			Address:          address,
+			Port:             in.Port,
+			CredentialJSON:   ui.CredentialJSON,
+			SettingsJSON:     in.SettingsJSON,
+			StreamJSON:       in.StreamJSON,
+			RealityPublicKey: in.RealityPublicKey,
+			Remark:           remark,
 		})
 		if err != nil {
 			resp.Links = append(resp.Links, linkEntry{

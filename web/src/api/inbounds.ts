@@ -14,6 +14,7 @@ export interface InboundInput {
   settings_json?: string
   stream_json?: string
   sniffing_json?: string
+  reality_public_key?: string
   enabled: boolean
 }
 

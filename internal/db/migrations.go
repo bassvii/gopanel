@@ -195,6 +195,13 @@ CREATE INDEX idx_notifications_unread ON notifications(read_at, created_at);
 CREATE INDEX idx_notifications_created ON notifications(created_at);
 `,
 	},
+	{
+		version: 8,
+		name:    "reality public key",
+		sql: `
+ALTER TABLE inbounds ADD COLUMN reality_public_key TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {

@@ -17,6 +17,7 @@ type Input struct {
 	CredentialJSON string // {"id":"..."} или {"password":"..."}
 	SettingsJSON   string // settings инбаунда (decryption, method, ...)
 	StreamJSON     string // streamSettings инбаунда (tls, reality, ws, ...)
+	RealityPublicKey string
 	Remark         string // имя записи
 }
 

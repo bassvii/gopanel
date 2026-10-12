@@ -22,6 +22,7 @@ type inboundDTO struct {
 	SettingsJSON string `json:"settings_json"`
 	StreamJSON   string `json:"stream_json"`
 	SniffingJSON string `json:"sniffing_json"`
+	RealityPublicKey string `json:"reality_public_key"`
 	Enabled      bool   `json:"enabled"`
 	CreatedAt    int64  `json:"created_at"`
 }
@@ -40,6 +41,7 @@ func toInboundDTO(in db.Inbound) inboundDTO {
 		SettingsJSON: in.SettingsJSON,
 		StreamJSON:   in.StreamJSON,
 		SniffingJSON: in.SniffingJSON,
+		RealityPublicKey: in.RealityPublicKey,
 		Enabled:      in.Enabled,
 		CreatedAt:    created,
 	}
@@ -53,6 +55,7 @@ type inboundPayload struct {
 	SettingsJSON string `json:"settings_json"`
 	StreamJSON   string `json:"stream_json"`
 	SniffingJSON string `json:"sniffing_json"`
+	RealityPublicKey string `json:"reality_public_key"`
 	Enabled      bool   `json:"enabled"`
 }
 
@@ -93,7 +96,8 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 		id, err := db.CreateInbound(s.db, db.Inbound{
 			Tag: p.Tag, Protocol: p.Protocol, Port: p.Port, Listen: p.Listen,
 			SettingsJSON: p.SettingsJSON, StreamJSON: p.StreamJSON,
-			SniffingJSON: p.SniffingJSON, Enabled: p.Enabled,
+			SniffingJSON: p.SniffingJSON, RealityPublicKey: p.RealityPublicKey,
+			Enabled: p.Enabled,
 		})
 		if err != nil {
 			s.log.Error("create inbound failed", "err", err)
@@ -152,7 +156,8 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 		err := db.UpdateInbound(s.db, db.Inbound{
 			ID: id, Tag: p.Tag, Protocol: p.Protocol, Port: p.Port, Listen: p.Listen,
 			SettingsJSON: p.SettingsJSON, StreamJSON: p.StreamJSON,
-			SniffingJSON: p.SniffingJSON, Enabled: p.Enabled,
+			SniffingJSON: p.SniffingJSON, RealityPublicKey: p.RealityPublicKey,
+			Enabled: p.Enabled,
 		})
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

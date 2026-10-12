@@ -15,18 +15,18 @@ var ErrNotFound = errors.New("not found")
 
 // Inbound — инбаунд ядра.
 type Inbound struct {
-	ID           int64
-	Tag          string
-	Protocol     string
-	Port         int
-	Listen       string
-	SettingsJSON string
-	StreamJSON   string
-	SniffingJSON string
-	Enabled      bool
-	CreatedAt    time.Time
+	ID               int64
+	Tag              string
+	Protocol         string
+	Port             int
+	Listen           string
+	SettingsJSON     string
+	StreamJSON       string
+	SniffingJSON     string
+	RealityPublicKey string
+	Enabled          bool
+	CreatedAt        time.Time
 }
-
 // CreateInbound создаёт инбаунд.
 func CreateInbound(conn *sql.DB, in Inbound) (int64, error) {
 	if in.Tag == "" {
@@ -53,11 +53,12 @@ func CreateInbound(conn *sql.DB, in Inbound) (int64, error) {
 
 	res, err := conn.Exec(
 		`INSERT INTO inbounds
-		 (tag, protocol, port, listen, settings_json, stream_json, sniffing_json, enabled, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (tag, protocol, port, listen, settings_json, stream_json, sniffing_json,
+		  reality_public_key, enabled, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.Tag, in.Protocol, in.Port, in.Listen,
 		in.SettingsJSON, in.StreamJSON, in.SniffingJSON,
-		boolToInt(in.Enabled), time.Now().Unix(),
+		in.RealityPublicKey, boolToInt(in.Enabled), time.Now().Unix(),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert inbound: %w", err)
@@ -74,12 +75,12 @@ func GetInbound(conn *sql.DB, id int64) (Inbound, error) {
 	)
 	err := conn.QueryRow(
 		`SELECT id, tag, protocol, port, listen, settings_json, stream_json,
-		        sniffing_json, enabled, created_at
+		        sniffing_json, reality_public_key, enabled, created_at
 		 FROM inbounds WHERE id = ?`,
 		id,
 	).Scan(&in.ID, &in.Tag, &in.Protocol, &in.Port, &in.Listen,
 		&in.SettingsJSON, &in.StreamJSON, &in.SniffingJSON,
-		&enabled, &createdAt)
+		&in.RealityPublicKey, &enabled, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return in, ErrNotFound
 	}
@@ -108,7 +109,7 @@ func GetInboundByTag(conn *sql.DB, tag string) (Inbound, error) {
 func ListInbounds(conn *sql.DB) ([]Inbound, error) {
 	rows, err := conn.Query(
 		`SELECT id, tag, protocol, port, listen, settings_json, stream_json,
-		        sniffing_json, enabled, created_at
+		        sniffing_json, reality_public_key, enabled, created_at
 		 FROM inbounds ORDER BY id`,
 	)
 	if err != nil {
@@ -125,7 +126,7 @@ func ListInbounds(conn *sql.DB) ([]Inbound, error) {
 		)
 		if err := rows.Scan(&in.ID, &in.Tag, &in.Protocol, &in.Port, &in.Listen,
 			&in.SettingsJSON, &in.StreamJSON, &in.SniffingJSON,
-			&enabled, &createdAt); err != nil {
+			&in.RealityPublicKey, &enabled, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan inbound: %w", err)
 		}
 		in.Enabled = enabled != 0
@@ -147,11 +148,11 @@ func UpdateInbound(conn *sql.DB, in Inbound) error {
 		`UPDATE inbounds
 		 SET tag = ?, protocol = ?, port = ?, listen = ?,
 		     settings_json = ?, stream_json = ?, sniffing_json = ?,
-		     enabled = ?
+		     reality_public_key = ?, enabled = ?
 		 WHERE id = ?`,
 		in.Tag, in.Protocol, in.Port, in.Listen,
 		in.SettingsJSON, in.StreamJSON, in.SniffingJSON,
-		boolToInt(in.Enabled), in.ID,
+		in.RealityPublicKey, boolToInt(in.Enabled), in.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update inbound: %w", err)

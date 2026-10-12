@@ -351,12 +351,17 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const [realityPublicKey, setRealityPublicKey] = useState(
+    inbound?.reality_public_key ?? ''
+  )
+
   async function handleGenerateKeys() {
     setGenerating(true)
     setError('')
     try {
       const pair = await generateX25519()
       setStream((s) => ({ ...s, realityPrivateKey: pair.private_key }))
+      setRealityPublicKey(pair.public_key)   // ← сохраняем publicKey
       toast.success('Ключи сгенерированы')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ошибка генерации ключей')
@@ -415,6 +420,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       settings_json: settings,
       stream_json: buildStreamJSON(streamForSubmit),
       sniffing_json: sniffing,
+      reality_public_key: realityPublicKey,   // ← новое
       enabled,
     }
 
@@ -664,6 +670,15 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                       {generating ? '...' : 'Сгенерировать'}
                   </button>
                 </div>
+              </Field>
+
+              <Field label="Public Key (для ссылок)">
+                <input
+                  value={realityPublicKey}
+                  readOnly
+                  placeholder="генерируется вместе с Private Key"
+                  className={inputClass + ' font-mono text-xs'}
+                />
               </Field>
 
               <Field label="Short IDs (через запятую)">

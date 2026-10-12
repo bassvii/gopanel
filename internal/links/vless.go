@@ -45,12 +45,12 @@ func generateVLESS(in Input) (string, error) {
 				q.Set("fp", fp)
 			}
 		}
-		if security == "reality" && reality != nil {
+		if security == "reality" {
 			if sni := getString(reality, "serverName"); sni != "" {
 				q.Set("sni", sni)
 			}
-			if pbk := getString(reality, "publicKey"); pbk != "" {
-				q.Set("pbk", pbk)
+			if in.RealityPublicKey != "" {
+				q.Set("pbk", in.RealityPublicKey)
 			}
 			if sid := getString(reality, "shortId"); sid != "" {
 				q.Set("sid", sid)
@@ -58,10 +58,11 @@ func generateVLESS(in Input) (string, error) {
 			if fp := getString(reality, "fingerprint"); fp != "" {
 				q.Set("fp", fp)
 			}
-			q.Set("flow", getString(reality, "flow"))
+			if flow := getString(reality, "flow"); flow != "" {
+				q.Set("flow", flow)
+			}
 		}
 	}
-
 	// Транспорт-специфичные параметры
 	switch transportType(stream) {
 	case "ws":
