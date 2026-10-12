@@ -19,6 +19,8 @@ import type { Inbound } from '../api/types'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Button, Badge, Toggle } from '../components/ui'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -157,88 +159,129 @@ export function Inbounds() {
   return (
     <>
       <div className="flex-1 p-6 overflow-y-auto">
+        {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-white">Инбаунды</h2>
-            <p className="text-sm text-neutral-500">
-              {inbounds.length} {inbounds.length === 1 ? 'запись' : 'записей'}
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              {inbounds.length}{' '}
+              {inbounds.length === 1 ? 'запись' : inbounds.length < 5 ? 'записи' : 'записей'}
             </p>
           </div>
         </div>
 
+        {/* Пресеты */}
         <div className="mb-6">
-          <div className="text-sm text-neutral-400 mb-2">Создать из пресета:</div>
+          <div
+            className="text-xs uppercase tracking-wide mb-3"
+            style={{ color: 'var(--text-dim)' }}
+          >
+            Создать из пресета
+          </div>
           <div className="flex flex-wrap gap-2">
             {presets.map((p) => (
               <button
                 key={p.name}
                 onClick={() => setCreating(p)}
-                className="text-sm bg-neutral-800 hover:bg-neutral-700 text-white rounded px-3 py-1.5"
+                className="text-sm px-3 py-2 rounded-lg transition-colors flex items-center gap-2"
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-surface-hover)'
+                  e.currentTarget.style.borderColor = 'var(--border-strong)'
+                  e.currentTarget.style.color = 'var(--text)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-surface)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
+                  e.currentTarget.style.color = 'var(--text-muted)'
+                }}
               >
-                + {p.name}
+                <Plus size={14} />
+                {p.name}
               </button>
             ))}
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
+          <div
+            className="mb-4 text-sm rounded-lg px-3 py-2"
+            style={{
+              color: 'var(--danger)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+            }}
+          >
             {error}
           </div>
         )}
 
         {loading ? (
-          <TableSkeleton rows={5} cols={6} />
+          <TableSkeleton rows={4} cols={6} />
         ) : inbounds.length === 0 ? (
-          <div className="text-neutral-500 text-center py-16">
-            Инбаундов пока нет. Создайте первый из пресета выше.
+          <div className="card p-12 text-center">
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Инбаундов пока нет. Создайте первый из пресета выше.
+            </p>
           </div>
         ) : (
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-950 text-neutral-400">
+          <div className="card overflow-hidden">
+            <table className="table">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">Тег</th>
-                  <th className="text-left px-4 py-3 font-medium">Протокол</th>
-                  <th className="text-left px-4 py-3 font-medium">Порт</th>
-                  <th className="text-left px-4 py-3 font-medium">Listen</th>
-                  <th className="text-left px-4 py-3 font-medium">Статус</th>
-                  <th className="text-right px-4 py-3 font-medium">Действия</th>
+                  <th>Тег</th>
+                  <th>Протокол</th>
+                  <th>Порт</th>
+                  <th>Listen</th>
+                  <th>Статус</th>
+                  <th style={{ textAlign: 'right' }}>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {inbounds.map((inb) => (
-                  <tr key={inb.id} className="border-t border-neutral-800 hover:bg-neutral-900/40">
-                    <td className="px-4 py-3 text-white">{inb.tag}</td>
-                    <td className="px-4 py-3 text-neutral-400">{inb.protocol}</td>
-                    <td className="px-4 py-3 text-neutral-400">{inb.port}</td>
-                    <td className="px-4 py-3 text-neutral-400">{inb.listen}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => toggleEnabled(inb)}
-                        className={
-                          'text-xs px-2 py-1 rounded ' +
-                          (inb.enabled
-                            ? 'text-green-400 hover:bg-green-950/30'
-                            : 'text-red-400 hover:bg-red-950/30')
-                        }
-                      >
-                        {inb.enabled ? 'включён' : 'отключён'}
-                      </button>
+                  <tr key={inb.id}>
+                    <td>
+                      <span className="text-white font-medium">{inb.tag}</span>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setEditing(inb)}
-                        className="text-neutral-400 hover:text-white text-xs mr-3"
-                      >
-                        Изменить
-                      </button>
-                      <button
-                        onClick={() => handleDelete(inb)}
-                        className="text-red-400 hover:text-red-300 text-xs"
-                      >
-                        Удалить
-                      </button>
+                    <td>
+                      <Badge variant="neutral">{inb.protocol}</Badge>
+                    </td>
+                    <td style={{ color: 'var(--text-muted)' }}>{inb.port}</td>
+                    <td
+                      className="font-mono text-xs"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {inb.listen}
+                    </td>
+                    <td>
+                      <Toggle
+                        enabled={inb.enabled}
+                        onChange={() => toggleEnabled(inb)}
+                      />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditing(inb)}
+                          icon={<Pencil size={14} />}
+                        >
+                          Изменить
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(inb)}
+                          icon={<Trash2 size={14} />}
+                        >
+                          Удалить
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -246,29 +289,29 @@ export function Inbounds() {
             </table>
           </div>
         )}
-
-        {creating && (
-          <InboundForm
-            preset={creating}
-            onClose={() => setCreating(null)}
-            onSaved={async () => {
-              setCreating(null)
-              await reload()
-            }}
-          />
-        )}
-
-        {editing && (
-          <InboundForm
-            inbound={editing}
-            onClose={() => setEditing(null)}
-            onSaved={async () => {
-              setEditing(null)
-              await reload()
-            }}
-          />
-        )}
       </div>
+
+      {creating && (
+        <InboundForm
+          preset={creating}
+          onClose={() => setCreating(null)}
+          onSaved={async () => {
+            setCreating(null)
+            await reload()
+          }}
+        />
+      )}
+
+      {editing && (
+        <InboundForm
+          inbound={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null)
+            await reload()
+          }}
+        />
+      )}
 
       {dialog}
     </>
