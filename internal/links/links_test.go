@@ -50,12 +50,13 @@ func TestGenerateVLESSTLS(t *testing.T) {
 
 func TestGenerateVLESSTLSReality(t *testing.T) {
 	got, err := Generate(Input{
-		Protocol:       "vless",
-		Address:        "1.2.3.4",
-		Port:           443,
-		CredentialJSON: `{"id":"11111111-1111-1111-1111-111111111111","flow":"xtls-rprx-vision"}`,
-		StreamJSON:     `{"network":"tcp","security":"reality","realitySettings":{"serverName":"reality.example.com","publicKey":"PBK123","shortId":"abcd1234","fingerprint":"chrome"}}`,
-		Remark:         "reality",
+		Protocol:         "vless",
+		Address:          "1.2.3.4",
+		Port:             443,
+		CredentialJSON:   `{"id":"11111111-1111-1111-1111-111111111111","flow":"xtls-rprx-vision"}`,
+		StreamJSON:       `{"network":"tcp","security":"reality","realitySettings":{"serverName":"reality.example.com","shortId":"abcd1234","fingerprint":"chrome"}}`,
+		RealityPublicKey: "PBK123",
+		Remark:           "reality",
 	})
 	if err != nil {
 		t.Fatal(err)
