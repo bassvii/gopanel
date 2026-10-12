@@ -8,11 +8,13 @@ import {
   Shield,
 } from 'lucide-react'
 import { useRouter, type Route } from '../lib/router'
+import { Route as RouteIcon } from 'lucide-react'
 
 const items: { name: Route['name']; label: string; Icon: typeof Users }[] = [
   { name: 'dashboard', label: 'Панель', Icon: LayoutDashboard },
   { name: 'users', label: 'Пользователи', Icon: Users },
   { name: 'inbounds', label: 'Инбаунды', Icon: Server },
+  { name: 'routing', label: 'Маршрутизация', Icon: RouteIcon},
   { name: 'traffic', label: 'Трафик', Icon: Activity },
   { name: 'settings', label: 'Настройки', Icon: Settings },
   { name: 'audit', label: 'Аудит', Icon: FileText },

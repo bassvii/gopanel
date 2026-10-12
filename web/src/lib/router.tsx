@@ -5,6 +5,7 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'users' }
   | { name: 'inbounds' }
+  | { name: 'routing' }
   | { name: 'traffic' }
   | { name: 'settings' }
   | { name: 'audit' }

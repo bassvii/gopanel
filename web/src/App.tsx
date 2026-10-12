@@ -9,12 +9,14 @@ import { Audit } from './pages/Audit'
 import { Settings } from './pages/Settings'
 import { me } from './api/auth'
 import { RouterProvider, useRouter, type Route } from './lib/router'
+import { Routing } from './pages/Routing'
 
 const titles: Record<Route['name'], string> = {
   login: 'Вход',
   dashboard: 'Панель',
   users: 'Пользователи',
   inbounds: 'Инбаунды',
+  routing: 'Маршрутизация',
   traffic: 'Трафик',
   settings: 'Настройки',
   audit: 'Аудит',
@@ -28,6 +30,8 @@ function Page({ route }: { route: Route['name'] }) {
       return <Users />
     case 'inbounds':
       return <Inbounds />
+    case 'routing':
+      return <Routing />
     case 'audit':
       return <Audit />
     case 'settings':
