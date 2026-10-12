@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getAudit } from '../api/audit'
+import { auditLabel } from '../lib/auditLabels'
 import { ApiError } from '../api/client'
-import type { AuditEntry } from '../api/types'
-import { capitalize } from '../lib/format'
+import { Button } from '../components/ui'
 import { TableSkeleton } from '../components/Skeleton'
+import type { AuditEntry } from '../api/types'
 
 const PAGE_SIZE = 50
 
@@ -44,22 +46,52 @@ export function Audit() {
 
   return (
     <div className="flex-1 p-6 overflow-y-auto">
+      {/* Заголовок */}
       <div className="flex items-center justify-between mb-6 gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">Аудит</h2>
-          <p className="text-sm text-neutral-500">{total} событий</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+            {total} {total === 1 ? 'событие' : total < 5 ? 'события' : 'событий'}
+          </p>
         </div>
-        <input
-          type="text"
-          placeholder="Поиск по действию, объекту, IP"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[color:var(--accent)] transition-colors w-72"
-        />
+
+        {/* Поиск */}
+        <div className="relative w-72">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ color: 'var(--text-dim)' }}
+          />
+          <input
+            type="text"
+            placeholder="Поиск по действию, объекту, IP"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full rounded-lg pl-9 pr-3 py-2 text-sm outline-none transition-colors"
+            style={{
+              background: '#0a0a0a',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = 'var(--accent)'
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border)'
+            }}
+          />
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
+        <div
+          className="mb-4 text-sm rounded-lg px-3 py-2"
+          style={{
+            color: 'var(--danger)',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+          }}
+        >
           {error}
         </div>
       )}
@@ -67,28 +99,40 @@ export function Audit() {
       {loading ? (
         <TableSkeleton rows={10} cols={4} />
       ) : entries.length === 0 ? (
-        <div className="text-neutral-500 text-center py-16">Событий не найдено</div>
+        <div className="card p-12 text-center">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            {debouncedQuery ? 'Ничего не найдено' : 'Событий пока нет'}
+          </p>
+        </div>
       ) : (
         <>
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-950 text-neutral-400">
+          <div className="card overflow-hidden">
+            <table className="table">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">Время</th>
-                  <th className="text-left px-4 py-3 font-medium">Действие</th>
-                  <th className="text-left px-4 py-3 font-medium">Объект</th>
-                  <th className="text-left px-4 py-3 font-medium">IP</th>
+                  <th style={{ width: '180px' }}>Время</th>
+                  <th>Действие</th>
+                  <th>Объект</th>
+                  <th style={{ width: '140px' }}>IP</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.id} className="border-t border-neutral-800">
-                    <td className="px-4 py-2 text-neutral-400 whitespace-nowrap">
+                  <tr key={e.id}>
+                    <td
+                      className="whitespace-nowrap text-xs"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
                       {new Date(e.ts * 1000).toLocaleString('ru-RU')}
                     </td>
-                    <td className="px-4 py-2 text-white">{capitalize(e.action_ru || e.action)}</td>
-                    <td className="px-4 py-2 text-neutral-400">{e.target || '—'}</td>
-                    <td className="px-4 py-2 text-neutral-500 font-mono text-xs">{e.ip}</td>
+                    <td className="text-white">{e.action_ru || auditLabel(e.action)}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{e.target || '—'}</td>
+                    <td
+                      className="font-mono text-xs"
+                      style={{ color: 'var(--text-dim)' }}
+                    >
+                      {e.ip}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -97,23 +141,27 @@ export function Audit() {
 
           {pages > 1 && (
             <div className="flex items-center justify-between mt-4 text-sm">
-              <button
-                disabled={offset === 0}
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                className="text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                disabled={offset === 0}
+                icon={<ChevronLeft size={14} />}
               >
-                ← Назад
-              </button>
-              <span className="text-neutral-500">
+                Назад
+              </Button>
+              <span style={{ color: 'var(--text-muted)' }}>
                 Страница {currentPage} из {pages}
               </span>
-              <button
-                disabled={currentPage >= pages}
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setOffset(offset + PAGE_SIZE)}
-                className="text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                disabled={currentPage >= pages}
               >
-                Вперёд →
-              </button>
+                Вперёд
+                <ChevronRight size={14} />
+              </Button>
             </div>
           )}
         </>
