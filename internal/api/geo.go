@@ -4,6 +4,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/system"
@@ -38,8 +39,15 @@ func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
 	updated, err := system.UpdateGeo(r.Context())
 	if err != nil {
 		s.log.Error("geo update failed", "err", err)
+
+		// Понятное сообщение для permission denied.
+		msg := err.Error()
+		if strings.Contains(msg, "permission denied") {
+			msg = "нет прав на запись в /usr/local/share/xray — запустите панель с правами root или выдайте права пользователю gopanel"
+		}
+
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error":   err.Error(),
+			"error":   msg,
 			"updated": updated,
 		})
 		return
