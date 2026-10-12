@@ -44,6 +44,8 @@ type Client struct {
 // BuildInput — данные из БД, нужные для сборки конфига.
 type BuildInput struct {
 	Inbounds []InboundInput
+	Outbounds []OutboundInput
+	Rules     []RoutingRuleInput
 }
 
 // InboundInput — инбаунд и его пользователи.
@@ -69,19 +71,46 @@ type UserInput struct {
 	CredentialJSON string
 }
 
+// OutboundInput — outbound из БД.
+type OutboundInput struct {
+	Tag          string
+	Protocol     string
+	SettingsJSON string
+	StreamJSON   string
+	Enabled      bool
+}
+
+// RoutingRuleInput — правило маршрутизации из БД.
+type RoutingRuleInput struct {
+	ID              int64
+	Position        int
+	RuleTag         string
+	DomainsJSON     string
+	IPsJSON         string
+	PortsJSON       string
+	SourceIPsJSON   string
+	Network         string
+	InboundTagsJSON string
+	ProtocolJSON    string
+	OutboundTag     string
+	Enabled         bool
+}
+
 // BuildConfig собирает конфиг Xray из входных данных.
 // Админский API (StatsService) добавляется автоматически:
 // без него панель не сможет читать статистику.
+// BuildConfig собирает конфиг Xray из входных данных.
 func BuildConfig(in BuildInput) (*Config, error) {
 	cfg := &Config{
 		Log:       map[string]any{"loglevel": "warning"},
 		Stats:     map[string]any{},
 		Policy:    defaultPolicy(),
 		API:       defaultAPI(),
-		Outbounds: []map[string]any{{"protocol": "freedom", "tag": "direct"}},
-		Routing:   defaultRouting(),
+		Outbounds: buildOutbounds(in.Outbounds),
+		Routing:   buildRouting(in.Rules),
 	}
 
+	// Инбаунды.
 	for _, in := range in.Inbounds {
 		if !in.Enabled {
 			continue
@@ -119,7 +148,7 @@ func BuildConfig(in BuildInput) (*Config, error) {
 		})
 	}
 
-	// Добавляем API-инбаунд для StatsService.
+	// API-инбаунд для StatsService.
 	cfg.Inbounds = append(cfg.Inbounds, Inbound{
 		Tag:      "api",
 		Listen:   "127.0.0.1",
@@ -225,4 +254,136 @@ func defaultRouting() map[string]any {
 			},
 		},
 	}
+}
+
+// buildOutbounds формирует список outbound'ов для Xray.
+// Всегда добавляет freedom и blackhole, если их нет.
+func buildOutbounds(list []OutboundInput) []map[string]any {
+	hasFreedom := false
+	hasBlackhole := false
+	for _, o := range list {
+		switch o.Protocol {
+		case "freedom":
+			hasFreedom = true
+		case "blackhole":
+			hasBlackhole = true
+		}
+	}
+
+	var out []map[string]any
+
+	// Системные.
+	if !hasFreedom {
+		out = append(out, map[string]any{
+			"protocol": "freedom",
+			"tag":      "DIRECT",
+		})
+	}
+	if !hasBlackhole {
+		out = append(out, map[string]any{
+			"protocol": "blackhole",
+			"tag":      "BLOCK",
+		})
+	}
+
+	// Пользовательские.
+	for _, o := range list {
+		if !o.Enabled {
+			continue
+		}
+		settings, err := parseSettings(o.SettingsJSON)
+		if err != nil {
+			continue
+		}
+		stream, err := parseSettings(o.StreamJSON)
+		if err != nil {
+			continue
+		}
+
+		o2 := map[string]any{
+			"protocol": o.Protocol,
+			"tag":      o.Tag,
+		}
+		if len(settings) > 0 {
+			o2["settings"] = settings
+		}
+		if len(stream) > 0 {
+			o2["streamSettings"] = stream
+		}
+		out = append(out, o2)
+	}
+
+	return out
+}
+
+// buildRouting формирует блок routing.
+func buildRouting(rules []RoutingRuleInput) map[string]any {
+	var out []map[string]any
+
+	// Правило для API — всегда первое.
+	out = append(out, map[string]any{
+		"type":        "field",
+		"inboundTag":  []string{"api"},
+		"outboundTag": "api",
+	})
+
+	// Правила из БД — по порядку.
+	for _, r := range rules {
+		if !r.Enabled {
+			continue
+		}
+		rule := map[string]any{
+			"type":        "field",
+			"outboundTag": r.OutboundTag,
+		}
+
+		if r.RuleTag != "" {
+			rule["ruleTag"] = r.RuleTag
+		}
+
+		// Домены.
+		if domains, err := parseJSONArray(r.DomainsJSON); err == nil && len(domains) > 0 {
+			rule["domain"] = domains
+		}
+		// IP.
+		if ips, err := parseJSONArray(r.IPsJSON); err == nil && len(ips) > 0 {
+			rule["ip"] = ips
+		}
+		// Порты.
+		if ports, err := parseJSONArray(r.PortsJSON); err == nil && len(ports) > 0 {
+			rule["port"] = ports
+		}
+		// Source IP.
+		if src, err := parseJSONArray(r.SourceIPsJSON); err == nil && len(src) > 0 {
+			rule["source"] = src
+		}
+		// Network.
+		if r.Network != "" {
+			rule["network"] = r.Network
+		}
+		// Inbound tags.
+		if inbounds, err := parseJSONArray(r.InboundTagsJSON); err == nil && len(inbounds) > 0 {
+			rule["inboundTag"] = inbounds
+		}
+		// Protocol.
+		if proto, err := parseJSONArray(r.ProtocolJSON); err == nil && len(proto) > 0 {
+			rule["protocol"] = proto
+		}
+
+		out = append(out, rule)
+	}
+
+	return map[string]any{"rules": out}
+}
+
+// parseJSONArray разбирает JSON-строку в массив строк.
+func parseJSONArray(s string) ([]string, error) {
+	if s == "" || s == "[]" {
+		return nil, nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -482,6 +482,8 @@ func buildConfigFromDB(conn *sql.DB) ([]byte, error) {
 	}
 
 	var input xray.BuildInput
+
+	// Инбаунды.
 	for _, in := range inbounds {
 		links, err := db.ListUsersForInbound(conn, in.ID)
 		if err != nil {
@@ -514,6 +516,43 @@ func buildConfigFromDB(conn *sql.DB) ([]byte, error) {
 			SniffingJSON: in.SniffingJSON,
 			Enabled:      in.Enabled,
 			Users:        users,
+		})
+	}
+
+	// Outbound'ы.
+	outbounds, err := db.ListOutbounds(conn)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range outbounds {
+		input.Outbounds = append(input.Outbounds, xray.OutboundInput{
+			Tag:          o.Tag,
+			Protocol:     o.Protocol,
+			SettingsJSON: o.SettingsJSON,
+			StreamJSON:   o.StreamJSON,
+			Enabled:      o.Enabled,
+		})
+	}
+
+	// Routing rules.
+	rules, err := db.ListRoutingRules(conn)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rules {
+		input.Rules = append(input.Rules, xray.RoutingRuleInput{
+			ID:              r.ID,
+			Position:        r.Position,
+			RuleTag:         r.RuleTag,
+			DomainsJSON:     r.DomainsJSON,
+			IPsJSON:         r.IPsJSON,
+			PortsJSON:       r.PortsJSON,
+			SourceIPsJSON:   r.SourceIPsJSON,
+			Network:         r.Network,
+			InboundTagsJSON: r.InboundTagsJSON,
+			ProtocolJSON:    r.ProtocolJSON,
+			OutboundTag:     r.OutboundTag,
+			Enabled:         r.Enabled,
 		})
 	}
 
