@@ -39,6 +39,9 @@ import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
 import { Button, Badge, Toggle, Select } from '../components/ui'
 import { Modal } from '../components/Modal'
+import { RefreshCw } from 'lucide-react'
+import { getGeoStatus, updateGeo, type GeoStatus } from '../api/geo'
+import { formatBytes } from '../lib/format'
 
 // --- Контекст обновления ---
 
@@ -68,6 +71,7 @@ export function Routing() {
         <PresetsSection />
         <OutboundsSection key={`out-${refreshKey}`} />
         <RulesSection key={`rules-${refreshKey}`} />
+        <GeoSection />
       </div>
     </RefreshContext.Provider>
   )
@@ -975,4 +979,114 @@ function splitList(s: string): string[] {
     .split(',')
     .map((x) => x.trim())
     .filter(Boolean)
+}
+
+// --- GeoIP/GeoSite ---
+
+function GeoSection() {
+  const [status, setStatus] = useState<GeoStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState(false)
+
+  async function reload() {
+    setLoading(true)
+    try {
+      setStatus(await getGeoStatus())
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка загрузки')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    reload()
+  }, [])
+
+  async function handleUpdate() {
+    setUpdating(true)
+    try {
+      const res = await updateGeo()
+      setStatus(res.status)
+      toast.success(`Обновлено ${res.updated} файлов`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка обновления')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <div
+        className="px-5 py-4 flex items-center justify-between"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        <div>
+          <div className="text-sm font-medium text-white">GeoIP / GeoSite</div>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            Библиотеки категорий для маршрутизации (Россия, реклама, сервисы)
+          </div>
+        </div>
+        <Button
+          onClick={handleUpdate}
+          disabled={updating}
+          icon={
+            updating ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <RefreshCw size={14} />
+            )
+          }
+          size="sm"
+        >
+          {updating ? 'Обновление...' : 'Обновить'}
+        </Button>
+      </div>
+
+      <div className="p-5">
+        {loading ? (
+          <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Загрузка...
+          </div>
+        ) : status ? (
+          <div className="grid grid-cols-2 gap-4">
+            <GeoFileCard file={status.geosite} />
+            <GeoFileCard file={status.geoip} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function GeoFileCard({ file }: { file: GeoStatus['geosite'] }) {
+  return (
+    <div
+      className="rounded-lg p-3"
+      style={{ background: '#0a0a0a', border: '1px solid var(--border)' }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ background: file.exists ? 'var(--success)' : 'var(--danger)' }}
+        />
+        <span className="text-sm font-mono text-white">{file.name}</span>
+      </div>
+      {file.exists ? (
+        <>
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Размер: {formatBytes(file.size_bytes)}
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>
+            Обновлён: {new Date(file.modified_at * 1000).toLocaleString('ru-RU')}
+          </div>
+        </>
+      ) : (
+        <div className="text-xs" style={{ color: 'var(--danger)' }}>
+          Файл не найден — нажмите «Обновить»
+        </div>
+      )}
+    </div>
+  )
 }

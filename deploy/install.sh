@@ -96,6 +96,14 @@ install_xray() {
         warn "setcap не сработал: Xray не сможет занять порты < 1024"
 
     log "Xray установлен: $($XRAY_BIN version | head -1)"
+    log "скачиваю GeoIP/GeoSite"
+    mkdir -p /usr/local/share/xray
+    curl -fsSL -o /usr/local/share/xray/geosite.dat \
+        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || \
+        warn "не удалось скачать geosite.dat"
+    curl -fsSL -o /usr/local/share/xray/geoip.dat \
+        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || \
+        warn "не удалось скачать geoip.dat"
 }
 
 # --- Пользователь ---
