@@ -18,6 +18,7 @@ import (
 	"time"
 	"path/filepath"
 
+	"github.com/bassvii/gopanel/internal/system"
 	"github.com/bassvii/gopanel/internal/backup"
 	"github.com/bassvii/gopanel"
 	"github.com/bassvii/gopanel/internal/api"
@@ -231,7 +232,7 @@ func runServe(args []string) error {
 	}
 	defer conn.Close()
 
-	// 3. Контекст отмены — создаём ДО всего, что его использует.
+	// 3. Контекст отмены — ДО всего, что его использует.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -250,7 +251,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	// 6. Xray обязателен.
+	// 6. Xray.
 	core, err := xray.New(cfg.XrayBin, cfg.XrayConfigPath, log)
 	if err != nil {
 		return fmt.Errorf("init xray core: %w", err)
@@ -264,28 +265,40 @@ func runServe(args []string) error {
 		log.Error("xray start failed", "err", err)
 	}
 
+	// 6.5. Системный сборщик метрик.
+	sysCollector := system.NewCollector(
+		5*time.Second,
+		"/",
+		720,
+		log,
+	)
+	go sysCollector.Run(ctx)
+
 	// 7. Админский HTTP-сервер.
 	srv, err := api.New(api.Config{
-		Listen:   cfg.Listen,
-		Port:     port,
-		BasePath: basePath,
+		Listen:           cfg.Listen,
+		Port:             port,
+		BasePath:         basePath,
 		AllowNonLoopback: cfg.AllowNonLoopback,
 	}, conn, log)
 	if err != nil {
 		return err
 	}
 
+	// Устанавливаем ядро и системный сборщик.
 	srv.SetCore(core)
+	if v, err := core.Version(ctx); err == nil {
+		srv.SetXrayVersion(v)
+	}
+	srv.SetSystemCollector(sysCollector, cfg.DBPath, time.Now())
 
 	// 8. Вшитый фронтенд.
 	if webFS := gopanel.WebFS(); webFS != nil {
 		srv.SetWebFS(webFS)
 		log.Info("frontend embedded")
-	} else {
-		log.Warn("frontend not embedded, / will return 404")
 	}
 
-	// 9. Сборщик статистики.
+	// 9. Сборщик статистики Xray.
 	collector := stats.New(
 		conn,
 		cfg.XrayBin,
@@ -296,17 +309,17 @@ func runServe(args []string) error {
 	)
 	go collector.Run(ctx)
 
-	// 10. Цикл перезагрузки конфига.
+	// 10. Цикл перезагрузки.
 	go reloadLoop(ctx, srv, core, conn, log)
 
-	// 11. Применение лимитов.
+	// 11. Лимиты.
 	go stats.RunLimitEnforcer(ctx, conn, srv.ReloadSignal(), 30*time.Second, log)
 
-	// 12. HTTP-сервер в горутине.
+	// 12. HTTP-сервер.
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start() }()
 
-	// 13. Дождаться фактического порта.
+	// 13. Порт.
 	actualPort, err := waitForPort(ctx, srv, 5*time.Second)
 	if err != nil {
 		return err
@@ -315,7 +328,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	// 14. Ждать сигнала или ошибки.
+	// 14. Ожидание.
 	select {
 	case <-ctx.Done():
 		log.Info("shutdown signal received")
@@ -329,7 +342,6 @@ func runServe(args []string) error {
 		return err
 	}
 }
-
 // reloadLoop слушает сигналы перезагрузки и перегенерирует конфиг Xray.
 func reloadLoop(ctx context.Context, srv *api.Server, core *xray.Core, conn *sql.DB, log *slog.Logger) {
 	for {

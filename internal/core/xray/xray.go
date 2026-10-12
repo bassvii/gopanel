@@ -59,7 +59,14 @@ var versionRe = regexp.MustCompile(`Xray\s+(\S+)`)
 
 // Version запускает `xray version` и возвращает строку версии.
 func (c *Core) Version(ctx context.Context) (string, error) {
+	// Свой таймаут — не зависим от контекста HTTP-запроса.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	cmd := exec.CommandContext(ctx, c.binPath, "version")
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("run xray version: %w", err)
@@ -194,4 +201,9 @@ func (c *Core) GenerateX25519(ctx context.Context) (X25519KeyPair, error) {
 		PrivateKey: priv[1],
 		PublicKey:  pub[1],
 	}, nil
+}
+
+// UptimeSeconds возвращает uptime Xray в секундах.
+func (c *Core) UptimeSeconds() int64 {
+	return c.process.UptimeSeconds()
 }

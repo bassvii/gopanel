@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bassvii/gopanel/internal/core/xray"
+	"github.com/bassvii/gopanel/internal/system"
 )
 
 // Server — админский HTTP-сервер.
@@ -27,12 +28,16 @@ type Server struct {
 	http   *http.Server
 	mux    *http.ServeMux
 	core   *xray.Core
+	system     *system.Collector
+	webFS    fs.FS
+	startTime  time.Time
 
 	secret   string
 	addr     string
 	port     int
 	reloadCh chan struct{}
-	webFS    fs.FS
+	cachedXrayVersion string
+	dbPath     string
 }
 
 // Config — параметры сервера.
@@ -184,6 +189,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/backup/download", s.handleBackupDownload)
 	s.mux.HandleFunc(s.secret+"/xray/x25519", s.handleX25519)
 	s.mux.HandleFunc(s.secret+"/xray/shortid", s.handleShortID)
+	s.mux.HandleFunc(s.secret+"/system/stats", s.handleSystemStats)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)
@@ -231,4 +237,15 @@ func (s *Server) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.handleUser(w, r)
 	}
+}
+
+// SetSystemCollector устанавливает сборщик метрик системы.
+func (s *Server) SetSystemCollector(c *system.Collector, dbPath string, startTime time.Time) {
+	s.system = c
+	s.dbPath = dbPath
+	s.startTime = startTime
+}
+
+func (s *Server) SetXrayVersion(v string) {
+	s.cachedXrayVersion = v
 }

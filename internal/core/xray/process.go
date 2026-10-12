@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,6 +33,10 @@ type Process struct {
 	done     chan struct{}
 	lastErr  error
 	restarts int
+
+	// Атомики — чтобы читать без мьютекса.
+	running   atomic.Bool
+	startedAt atomic.Int64 // Unix-время старта, 0 если не запущен
 }
 
 // NewProcess создаёт управляющий объект (но не запускает).
@@ -46,10 +52,9 @@ func NewProcess(binPath, configPath string, log *slog.Logger) *Process {
 }
 
 // IsRunning возвращает true, если процесс жив.
+// Без мьютекса — читает атомик.
 func (p *Process) IsRunning() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.cmd != nil && p.cmd.Process != nil && p.cmd.ProcessState == nil
+	return p.running.Load()
 }
 
 // LastError возвращает ошибку последнего запуска (nil, если всё ок).
@@ -57,6 +62,16 @@ func (p *Process) LastError() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.lastErr
+}
+
+// UptimeSeconds возвращает, сколько работает текущий процесс.
+// Без мьютекса — читает атомик.
+func (p *Process) UptimeSeconds() int64 {
+	start := p.startedAt.Load()
+	if start == 0 {
+		return 0
+	}
+	return time.Now().Unix() - start
 }
 
 // Start запускает Xray. Если он уже запущен — ErrRunning.
@@ -88,6 +103,9 @@ func (p *Process) Start(ctx context.Context) error {
 	p.lastErr = nil
 	p.mu.Unlock()
 
+	p.running.Store(true)
+	p.startedAt.Store(time.Now().Unix())
+
 	p.log.Info("xray started", "pid", cmd.Process.Pid, "config", p.configPath)
 
 	go p.supervise(runCtx, cmd)
@@ -110,7 +128,6 @@ func (p *Process) Stop() error {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		// Если не завершился за 5 секунд — убиваем.
 		p.mu.Lock()
 		if p.cmd != nil && p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
@@ -137,9 +154,23 @@ func (p *Process) supervise(ctx context.Context, cmd *exec.Cmd) {
 	restarts := p.restarts
 	p.mu.Unlock()
 
+	p.running.Store(false)
+	p.startedAt.Store(0)
+
 	if ctx.Err() != nil {
 		// Штатная остановка — перезапускать не нужно.
 		return
+	}
+
+	// Фатальные ошибки — не перезапускаем.
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "address already in use") ||
+			strings.Contains(msg, "bind:") ||
+			strings.Contains(msg, "permission denied") {
+			p.log.Error("xray cannot start (fatal error), giving up", "err", err)
+			return
+		}
 	}
 
 	p.log.Warn("xray exited unexpectedly", "err", err, "restarts", restarts)
