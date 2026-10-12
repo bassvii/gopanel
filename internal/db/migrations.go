@@ -140,6 +140,44 @@ ALTER TABLE audit_log ADD COLUMN action_ru TEXT NOT NULL DEFAULT '';
 CREATE INDEX idx_audit_action_ru ON audit_log(action_ru);
 `,
 	},
+	{
+		version: 6,
+		name:    "outbounds and routing rules",
+		sql: `
+CREATE TABLE outbounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag           TEXT    NOT NULL UNIQUE,
+    protocol      TEXT    NOT NULL,
+    settings_json TEXT    NOT NULL DEFAULT '{}',
+    stream_json   TEXT    NOT NULL DEFAULT '{}',
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    is_builtin    INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL
+);
+
+CREATE TABLE routing_rules (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    position          INTEGER NOT NULL,
+    rule_tag          TEXT    NOT NULL DEFAULT '',
+    domains_json      TEXT    NOT NULL DEFAULT '[]',
+    ips_json          TEXT    NOT NULL DEFAULT '[]',
+    ports_json        TEXT    NOT NULL DEFAULT '[]',
+    source_ips_json   TEXT    NOT NULL DEFAULT '[]',
+    network           TEXT    NOT NULL DEFAULT '',
+    inbound_tags_json TEXT    NOT NULL DEFAULT '[]',
+    protocol_json     TEXT    NOT NULL DEFAULT '[]',
+    outbound_tag      TEXT    NOT NULL,
+    enabled           INTEGER NOT NULL DEFAULT 1,
+    created_at        INTEGER NOT NULL
+);
+CREATE INDEX idx_routing_position ON routing_rules(position);
+
+INSERT INTO outbounds (tag, protocol, settings_json, stream_json, enabled, is_builtin, created_at)
+VALUES
+    ('DIRECT', 'freedom', '{}', '{}', 1, 1, strftime('%s','now')),
+    ('BLOCK', 'blackhole', '{}', '{}', 1, 1, strftime('%s','now'));
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {
