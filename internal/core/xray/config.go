@@ -244,17 +244,6 @@ func defaultAPI() map[string]any {
 	}
 }
 
-func defaultRouting() map[string]any {
-	return map[string]any{
-		"rules": []map[string]any{
-			{
-				"type":        "field",
-				"inboundTag":  []string{"api"},
-				"outboundTag": "api",
-			},
-		},
-	}
-}
 
 // buildOutbounds формирует список outbound'ов для Xray.
 // Всегда добавляет freedom и blackhole, если их нет.
