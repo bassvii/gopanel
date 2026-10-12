@@ -190,6 +190,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/xray/x25519", s.handleX25519)
 	s.mux.HandleFunc(s.secret+"/xray/shortid", s.handleShortID)
 	s.mux.HandleFunc(s.secret+"/system/stats", s.handleSystemStats)
+	s.mux.HandleFunc(s.secret+"/outbounds", s.handleOutbounds)
+	s.mux.HandleFunc(s.secret+"/outbounds/", s.handleOutbound)
+	s.mux.HandleFunc(s.secret+"/routing/rules", s.handleRoutingRules)
+	s.mux.HandleFunc(s.secret+"/routing/rules/", s.handleRoutingRule)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)
