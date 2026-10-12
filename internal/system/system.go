@@ -36,6 +36,8 @@ type Point struct {
 	Timestamp  int64   `json:"ts"`
 	CPUPercent float64 `json:"cpu_percent"`
 	MemPercent float64 `json:"mem_percent"`
+	DiskPercent float64 `json:"disk_percent"`
+	LoadAvg1    float64 `json:"load_avg_1"`
 }
 
 // History — кольцевой буфер точек.

@@ -35,6 +35,8 @@ type systemPoint struct {
 	Timestamp  int64   `json:"ts"`
 	CPUPercent float64 `json:"cpu_percent"`
 	MemPercent float64 `json:"mem_percent"`
+	DiskPercent float64 `json:"disk_percent"`
+	LoadAvg1    float64 `json:"load_avg_1"`
 }
 
 type xrayStatus struct {
@@ -92,6 +94,8 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 				Timestamp:  p.Timestamp,
 				CPUPercent: p.CPUPercent,
 				MemPercent: p.MemPercent,
+				DiskPercent: p.DiskPercent,
+				LoadAvg1:    p.LoadAvg1,
 			})
 		}
 		s.log.Info("sysstats: history done", "points", len(pts))

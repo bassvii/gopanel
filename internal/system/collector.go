@@ -62,6 +62,8 @@ func (c *Collector) collectOnce() {
 		Timestamp:  s.Timestamp,
 		CPUPercent: s.CPUPercent,
 		MemPercent: s.MemPercent,
+		DiskPercent: s.DiskPercent,
+		LoadAvg1:    s.LoadAvg1,
 	})
 }
 
