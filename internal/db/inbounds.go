@@ -24,6 +24,7 @@ type Inbound struct {
 	StreamJSON       string
 	SniffingJSON     string
 	RealityPublicKey string
+	VlessEncClient   string
 	Enabled          bool
 	CreatedAt        time.Time
 }

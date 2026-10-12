@@ -8,7 +8,6 @@ import {
   type InboundInput,
 } from '../api/inbounds'
 import { ApiError } from '../api/client'
-import { generateX25519, generateShortID } from '../api/xray'
 import {
   parseStreamJSON,
   buildStreamJSON,
@@ -19,9 +18,9 @@ import type { Inbound } from '../api/types'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { Button, Badge, Toggle, Select } from '../components/ui'
+import { generateX25519, generateShortID, generateVlessEnc } from '../api/xray'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -354,6 +353,25 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
   const [realityPublicKey, setRealityPublicKey] = useState(
     inbound?.reality_public_key ?? ''
   )
+  const [vlessEncServer, setVlessEncServer] = useState('')
+  const [vlessEncClient, setVlessEncClient] = useState(
+    inbound?.vless_enc_client ?? ''
+  )
+
+  async function handleGenerateVlessEnc() {
+    setGenerating(true)
+    setError('')
+    try {
+      const res = await generateVlessEnc()
+      setVlessEncServer(res.server)
+      setVlessEncClient(res.client)
+      toast.success('VLESS Encryption сгенерирован')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка генерации')
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   async function handleGenerateKeys() {
     setGenerating(true)
@@ -361,7 +379,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
     try {
       const pair = await generateX25519()
       setStream((s) => ({ ...s, realityPrivateKey: pair.private_key }))
-      setRealityPublicKey(pair.public_key)   // ← сохраняем publicKey
+      setRealityPublicKey(pair.public_key)
       toast.success('Ключи сгенерированы')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ошибка генерации ключей')
@@ -412,15 +430,27 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       realityFlow: stream.realityFlow === '_none' ? '' : stream.realityFlow,
     }
 
+    let finalSettings = settings
+    if (protocol === 'vless' && vlessEncServer) {
+      try {
+        const parsed = JSON.parse(settings)
+        parsed.decryption = vlessEncServer
+        finalSettings = JSON.stringify(parsed, null, 2)
+      } catch {
+        // Игнорируем — settings невалидный JSON.
+      }
+    }
+
     const input: InboundInput = {
       tag,
       protocol,
       port: Number(port),
       listen,
-      settings_json: settings,
+      settings_json: finalSettings,
       stream_json: buildStreamJSON(streamForSubmit),
       sniffing_json: sniffing,
-      reality_public_key: realityPublicKey,   // ← новое
+      reality_public_key: realityPublicKey,
+      vless_enc_client: vlessEncClient,
       enabled,
     }
 
@@ -667,7 +697,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                     style={{ whiteSpace: 'nowrap' }}
                   >
                     <RefreshCw size={14} />
-                      {generating ? '...' : 'Сгенерировать'}
+                    {generating ? '...' : 'Сгенерировать'}
                   </button>
                 </div>
               </Field>
@@ -697,7 +727,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                     style={{ whiteSpace: 'nowrap' }}
                   >
                     <RefreshCw size={14} />
-                      {generating ? '...' : 'Сгенерировать'}
+                    {generating ? '...' : 'Сгенерировать'}
                   </button>
                 </div>
               </Field>
@@ -731,6 +761,36 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
             </div>
           )}
         </Section>
+
+        {/* VLESS Encryption */}
+        {protocol === 'vless' && stream.security === 'none' && (
+          <Section title="VLESS Encryption (опционально)">
+            <div className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+              Шифрование VLESS без TLS/REALITY. Нажмите «Сгенерировать» — строки подставятся в конфиг и ссылку.
+            </div>
+
+            <Button
+              type="button"
+              onClick={handleGenerateVlessEnc}
+              disabled={generating}
+              size="sm"
+            >
+              {generating ? 'Генерация...' : 'Сгенерировать'}
+            </Button>
+
+            {vlessEncServer && (
+              <div className="space-y-3 mt-3">
+                <Field label="Server (decryption)">
+                  <input
+                    value={vlessEncServer}
+                    readOnly
+                    className={inputClass + ' font-mono text-xs'}
+                  />
+                </Field>
+              </div>
+            )}
+          </Section>
+        )}
 
         {/* Расширенные настройки */}
         <div>
@@ -768,7 +828,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
           )}
         </div>
 
-        {/* Settings и Sniffing — оставим как JSON, но в свёрнутом виде */}
+        {/* Settings и Sniffing */}
         <details className="text-sm">
           <summary className="text-neutral-500 cursor-pointer hover:text-white">
             Settings и Sniffing (JSON)

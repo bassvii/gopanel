@@ -15,6 +15,7 @@ export interface InboundInput {
   stream_json?: string
   sniffing_json?: string
   reality_public_key?: string
+  vless_enc_client?: string
   enabled: boolean
 }
 

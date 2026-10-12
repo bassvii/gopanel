@@ -18,6 +18,7 @@ type Input struct {
 	SettingsJSON   string // settings инбаунда (decryption, method, ...)
 	StreamJSON     string // streamSettings инбаунда (tls, reality, ws, ...)
 	RealityPublicKey string
+	VlessEncClient   string
 	Remark         string // имя записи
 }
 

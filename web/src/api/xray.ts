@@ -23,3 +23,15 @@ export async function generateShortID(): Promise<string> {
   })
   return res.short_id
 }
+
+export interface VlessEncResult {
+  server: string
+  client: string
+}
+
+export async function generateVlessEnc(): Promise<VlessEncResult> {
+  return request<VlessEncResult>('/xray/vlessenc', {
+    method: 'POST',
+    withCSRF: true,
+  })
+}

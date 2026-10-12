@@ -98,6 +98,11 @@ func generateVLESS(in Input) (string, error) {
 		q.Set("flow", flow)
 	}
 
+	// VLESS Encryption.
+	if in.VlessEncClient != "" {
+		q.Set("encryption", in.VlessEncClient)
+	}
+
 	remark := url.PathEscape(in.Remark)
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s",
 		uuid, hostForURL(in.Address), in.Port, q.Encode(), remark), nil

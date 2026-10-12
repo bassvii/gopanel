@@ -23,6 +23,7 @@ type inboundDTO struct {
 	StreamJSON   string `json:"stream_json"`
 	SniffingJSON string `json:"sniffing_json"`
 	RealityPublicKey string `json:"reality_public_key"`
+	VlessEncClient   string `json:"vless_enc_client"`
 	Enabled      bool   `json:"enabled"`
 	CreatedAt    int64  `json:"created_at"`
 }
@@ -42,6 +43,7 @@ func toInboundDTO(in db.Inbound) inboundDTO {
 		StreamJSON:   in.StreamJSON,
 		SniffingJSON: in.SniffingJSON,
 		RealityPublicKey: in.RealityPublicKey,
+		VlessEncClient:   in.VlessEncClient,
 		Enabled:      in.Enabled,
 		CreatedAt:    created,
 	}
@@ -56,6 +58,7 @@ type inboundPayload struct {
 	StreamJSON   string `json:"stream_json"`
 	SniffingJSON string `json:"sniffing_json"`
 	RealityPublicKey string `json:"reality_public_key"`
+	VlessEncClient   string `json:"vless_enc_client"`
 	Enabled      bool   `json:"enabled"`
 }
 

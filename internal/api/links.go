@@ -93,6 +93,7 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 			SettingsJSON:     in.SettingsJSON,
 			StreamJSON:       in.StreamJSON,
 			RealityPublicKey: in.RealityPublicKey,
+			VlessEncClient:   in.VlessEncClient,
 			Remark:           remark,
 		})
 		if err != nil {

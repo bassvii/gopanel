@@ -207,3 +207,44 @@ func (c *Core) GenerateX25519(ctx context.Context) (X25519KeyPair, error) {
 func (c *Core) UptimeSeconds() int64 {
 	return c.process.UptimeSeconds()
 }
+
+// VlessEncResult — результат генерации VLESS Encryption.
+type VlessEncResult struct {
+	Server string `json:"server"`
+	Client string `json:"client"`
+}
+
+var (
+	vlessEncServerRe = regexp.MustCompile(`(?m)^"decryption":\s*"([^"]+)"`)
+	vlessEncClientRe = regexp.MustCompile(`(?m)^"encryption":\s*"([^"]+)"`)
+)
+
+// GenerateVlessEnc запускает `xray vlessenc` и возвращает первый вариант (X25519).
+// Первый вариант — короткие строки, лучше совместимы с клиентами.
+// ML-KEM-768 (пост-квантовый) даёт огромные строки — не помещаются в URL.
+func (c *Core) GenerateVlessEnc(ctx context.Context) (VlessEncResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, c.binPath, "vlessenc")
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return VlessEncResult{}, fmt.Errorf("xray vlessenc failed: %w", err)
+	}
+
+	text := string(out)
+	server := vlessEncServerRe.FindStringSubmatch(text)
+	client := vlessEncClientRe.FindStringSubmatch(text)
+
+	if len(server) < 2 || len(client) < 2 {
+		return VlessEncResult{}, fmt.Errorf("cannot parse vlessenc output")
+	}
+
+	return VlessEncResult{
+		Server: server[1],
+		Client: client[1],
+	}, nil
+}

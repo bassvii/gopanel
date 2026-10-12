@@ -71,3 +71,39 @@ func (s *Server) handleShortID(w http.ResponseWriter, r *http.Request) {
 		"short_id": hex.EncodeToString(buf),
 	})
 }
+
+// handleVlessEnc — POST /xray/vlessenc
+func (s *Server) handleVlessEnc(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+
+	if s.core == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "xray not available",
+		})
+		return
+	}
+
+	res, err := s.core.GenerateVlessEnc(r.Context())
+	if err != nil {
+		s.log.Error("vlessenc generation failed", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"server": res.Server,
+		"client": res.Client,
+	})
+}

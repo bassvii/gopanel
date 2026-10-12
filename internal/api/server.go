@@ -200,6 +200,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/system/geo/update", s.handleGeoUpdate)
 	s.mux.HandleFunc(s.secret+"/notifications", s.handleNotifications)
 	s.mux.HandleFunc(s.secret+"/notifications/read", s.handleNotificationsRead)
+	s.mux.HandleFunc(s.secret+"/xray/vlessenc", s.handleVlessEnc)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)

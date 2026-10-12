@@ -202,6 +202,13 @@ CREATE INDEX idx_notifications_created ON notifications(created_at);
 ALTER TABLE inbounds ADD COLUMN reality_public_key TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 9,
+		name:    "vless encryption client",
+		sql: `
+ALTER TABLE inbounds ADD COLUMN vless_enc_client TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {
