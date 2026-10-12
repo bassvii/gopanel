@@ -18,6 +18,8 @@ import { QRModal } from '../components/QRModal'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
+import { Plus, Pencil, Trash2, Link2 } from 'lucide-react'
+import { Button, Badge } from '../components/ui'
 
 export function Users() {
   const [users, setUsers] = useState<User[]>([])
@@ -67,23 +69,29 @@ export function Users() {
   return (
     <>
       <div className="flex-1 p-6 overflow-y-auto">
+        {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-white">Пользователи</h2>
-            <p className="text-sm text-neutral-500">
-              {users.length} {users.length === 1 ? 'запись' : 'записей'}
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              {users.length}{' '}
+              {users.length === 1 ? 'запись' : users.length < 5 ? 'записи' : 'записей'}
             </p>
           </div>
-          <button
-            onClick={() => setCreating(true)}
-            className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
-          >
-            + Создать
-          </button>
+          <Button onClick={() => setCreating(true)} icon={<Plus size={16} />}>
+            Создать
+          </Button>
         </div>
 
         {error && (
-          <div className="mb-4 text-sm text-red-400 bg-red-950/30 border border-red-900 rounded px-3 py-2">
+          <div
+            className="mb-4 text-sm rounded-lg px-3 py-2"
+            style={{
+              color: 'var(--danger)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+            }}
+          >
             {error}
           </div>
         )}
@@ -91,58 +99,78 @@ export function Users() {
         {loading ? (
           <TableSkeleton rows={5} cols={6} />
         ) : users.length === 0 ? (
-          <div className="text-neutral-500 text-center py-16">
-            Пользователей пока нет. Создайте первого.
+          <div className="card p-12 text-center">
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Пользователей пока нет. Создайте первого.
+            </p>
           </div>
         ) : (
-          <div className="border border-neutral-800 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-950 text-neutral-400">
+          <div className="card overflow-hidden">
+            <table className="table">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">Имя</th>
-                  <th className="text-left px-4 py-3 font-medium">Email</th>
-                  <th className="text-left px-4 py-3 font-medium">Трафик</th>
-                  <th className="text-left px-4 py-3 font-medium">Срок</th>
-                  <th className="text-left px-4 py-3 font-medium">Статус</th>
-                  <th className="text-right px-4 py-3 font-medium">Действия</th>
+                  <th>Имя</th>
+                  <th>Email</th>
+                  <th>Трафик</th>
+                  <th>Срок</th>
+                  <th>Статус</th>
+                  <th style={{ textAlign: 'right' }}>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.id} className="border-t border-neutral-800 hover:bg-neutral-900/40">
-                    <td className="px-4 py-3 text-white">{u.name}</td>
-                    <td className="px-4 py-3 text-neutral-400">{u.email}</td>
-                    <td className="px-4 py-3 text-neutral-400">
+                  <tr key={u.id}>
+                    <td>
+                      <span className="text-white font-medium">{u.name}</span>
+                    </td>
+                    <td style={{ color: 'var(--text-muted)' }}>{u.email}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>
                       {formatBytes(u.used_bytes)}
                       {u.quota_bytes > 0 && ` / ${formatBytes(u.quota_bytes)}`}
                     </td>
-                    <td className="px-4 py-3 text-neutral-400">{formatDate(u.expires_at)}</td>
-                    <td className="px-4 py-3">
-                      {u.enabled ? (
-                        <span className="text-green-400 text-xs">включён</span>
-                      ) : (
-                        <span className="text-red-400 text-xs">отключён</span>
-                      )}
+                    <td style={{ color: 'var(--text-muted)' }}>
+                      {formatDate(u.expires_at)}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setLinksFor(u)}
-                        className="text-neutral-400 hover:text-white text-xs mr-3"
-                      >
-                        Ссылки
-                      </button>
-                      <button
-                        onClick={() => setEditing(u)}
-                        className="text-neutral-400 hover:text-white text-xs mr-3"
-                      >
-                        Изменить
-                      </button>
-                      <button
-                        onClick={() => handleDelete(u)}
-                        className="text-red-400 hover:text-red-300 text-xs"
-                      >
-                        Удалить
-                      </button>
+                    <td>
+                      <Badge variant={u.enabled ? 'success' : 'danger'}>
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{
+                            background: u.enabled
+                              ? 'var(--success)'
+                              : 'var(--danger)',
+                          }}
+                        />
+                        {u.enabled ? 'включён' : 'отключён'}
+                      </Badge>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setLinksFor(u)}
+                          icon={<Link2 size={14} />}
+                        >
+                          Ссылки
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditing(u)}
+                          icon={<Pencil size={14} />}
+                        >
+                          Изменить
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(u)}
+                          icon={<Trash2 size={14} />}
+                        >
+                          Удалить
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -150,32 +178,30 @@ export function Users() {
             </table>
           </div>
         )}
-
-        {creating && (
-          <UserForm
-            onClose={() => setCreating(false)}
-            onSaved={async () => {
-              setCreating(false)
-              await reload()
-            }}
-          />
-        )}
-
-        {editing && (
-          <UserForm
-            user={editing}
-            onClose={() => setEditing(null)}
-            onSaved={async () => {
-              setEditing(null)
-              await reload()
-            }}
-          />
-        )}
-
-        {linksFor && (
-          <LinksModal user={linksFor} onClose={() => setLinksFor(null)} />
-        )}
       </div>
+
+      {creating && (
+        <UserForm
+          onClose={() => setCreating(false)}
+          onSaved={async () => {
+            setCreating(false)
+            await reload()
+          }}
+        />
+      )}
+
+      {editing && (
+        <UserForm
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null)
+            await reload()
+          }}
+        />
+      )}
+
+      {linksFor && <LinksModal user={linksFor} onClose={() => setLinksFor(null)} />}
 
       {dialog}
     </>
