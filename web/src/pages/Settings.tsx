@@ -1,16 +1,21 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { KeyRound, LogOut, Shield } from 'lucide-react'
 import { changePassword, listSessions, revokeSession, revokeOtherSessions } from '../api/me'
-import { ApiError } from '../api/client'
-import type { Session } from '../api/types'
 import { downloadBackup } from '../api/backup'
+import { ApiError } from '../api/client'
 import { toast } from 'sonner'
+import { Button, Input } from '../components/ui'
+import type { Session } from '../api/types'
 
 export function Settings() {
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-6">
+      {/* Заголовок */}
       <div>
         <h2 className="text-2xl font-bold text-white">Настройки</h2>
-        <p className="text-sm text-neutral-500">Профиль, безопасность, сессии</p>
+        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+          Профиль, безопасность, сессии
+        </p>
       </div>
 
       <PasswordSection />
@@ -21,33 +26,58 @@ export function Settings() {
   )
 }
 
-function Section({ title, description, children }: {
+// --- Секция (карточка) ---
+
+function Section({
+  title,
+  description,
+  icon,
+  children,
+}: {
   title: string
   description?: string
+  icon?: ReactNode
   children: ReactNode
 }) {
   return (
-    <div className="bg-neutral-950 border border-neutral-800 rounded-lg">
-      <div className="px-5 py-3 border-b border-neutral-800">
-        <div className="text-sm font-medium text-white">{title}</div>
-        {description && <div className="text-xs text-neutral-500 mt-0.5">{description}</div>}
+    <div className="card">
+      <div
+        className="px-5 py-4 flex items-center gap-3"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        {icon && (
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}
+          >
+            {icon}
+          </div>
+        )}
+        <div>
+          <div className="text-sm font-medium text-white">{title}</div>
+          {description && (
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {description}
+            </div>
+          )}
+        </div>
       </div>
       <div className="p-5">{children}</div>
     </div>
   )
 }
 
+// --- Смена пароля ---
+
 function PasswordSection() {
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setMsg('')
     setError('')
     if (newPassword !== confirm) {
       setError('Пароли не совпадают')
@@ -60,57 +90,60 @@ function PasswordSection() {
     setSaving(true)
     try {
       await changePassword(oldPassword, newPassword)
-      setMsg('Пароль изменён')
+      toast.success('Пароль изменён')
       setOldPassword('')
       setNewPassword('')
       setConfirm('')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Ошибка')
+      const msg = err instanceof ApiError ? err.message : 'Ошибка'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Section title="Смена пароля" description="Минимум 12 символов">
+    <Section
+      title="Смена пароля"
+      description="Минимум 12 символов"
+      icon={<KeyRound size={16} />}
+    >
       <form onSubmit={handleSubmit} className="space-y-3 max-w-md">
-        <input
+        <Input
           type="password"
           placeholder="Текущий пароль"
           value={oldPassword}
           onChange={(e) => setOldPassword(e.target.value)}
           required
-          className={inputClass}
+          autoComplete="current-password"
         />
-        <input
+        <Input
           type="password"
           placeholder="Новый пароль"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           required
-          className={inputClass}
+          autoComplete="new-password"
         />
-        <input
+        <Input
           type="password"
           placeholder="Повторите новый пароль"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           required
-          className={inputClass}
+          autoComplete="new-password"
+          error={error}
         />
-        {error && <div className="text-sm text-red-400">{error}</div>}
-        {msg && <div className="text-sm text-green-400">{msg}</div>}
-        <button
-          type="submit"
-          disabled={saving}
-          className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200 disabled:opacity-50"
-        >
+        <Button type="submit" disabled={saving}>
           {saving ? 'Сохранение...' : 'Сменить пароль'}
-        </button>
+        </Button>
       </form>
     </Section>
   )
 }
+
+// --- Сессии ---
 
 function SessionsSection() {
   const [sessions, setSessions] = useState<Session[]>([])
@@ -136,6 +169,7 @@ function SessionsSection() {
     try {
       await revokeSession(id)
       await reload()
+      toast.success('Сессия завершена')
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Ошибка')
     }
@@ -146,49 +180,66 @@ function SessionsSection() {
     try {
       await revokeOtherSessions()
       await reload()
+      toast.success('Все остальные сессии завершены')
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Ошибка')
     }
   }
 
   return (
-    <Section title="Активные сессии" description="Устройства, с которых выполнен вход">
+    <Section
+      title="Активные сессии"
+      description="Устройства, с которых выполнен вход"
+      icon={<LogOut size={16} />}
+    >
       {loading ? (
-        <div className="text-sm text-neutral-500">Загрузка...</div>
+        <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          Загрузка...
+        </div>
       ) : (
         <div className="space-y-2">
           {sessions.map((s) => (
             <div
               key={s.id}
-              className="flex items-center justify-between border border-neutral-800 rounded px-3 py-2 text-sm"
+              className="flex items-center justify-between rounded-lg px-4 py-3"
+              style={{ background: '#0a0a0a', border: '1px solid var(--border)' }}
             >
-              <div>
-                <div className="text-white">
-                  {s.ip} {s.current && <span className="text-green-400 text-xs">· текущая</span>}
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-white">
+                  {s.ip}{' '}
+                  {s.current && (
+                    <span className="text-xs" style={{ color: 'var(--success)' }}>
+                      · текущая
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs text-neutral-500 truncate max-w-md">{s.user_agent}</div>
-                <div className="text-xs text-neutral-600">
-                  Последняя активность: {new Date(s.last_seen * 1000).toLocaleString('ru-RU')}
+                <div
+                  className="text-xs truncate max-w-md mt-0.5"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {s.user_agent}
+                </div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                  Последняя активность:{' '}
+                  {new Date(s.last_seen * 1000).toLocaleString('ru-RU')}
                 </div>
               </div>
               {!s.current && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => revoke(s.id)}
-                  className="text-xs text-red-400 hover:text-red-300"
                 >
                   Завершить
-                </button>
+                </Button>
               )}
             </div>
           ))}
 
           {sessions.length > 1 && (
-            <button
-              onClick={revokeAll}
-              className="text-xs text-red-400 hover:text-red-300 mt-2"
-            >
-              Завершить все остальные сессии
-            </button>
+            <Button variant="ghost" size="sm" onClick={revokeAll}>
+              Завершить все остальные
+            </Button>
           )}
         </div>
       )}
@@ -196,35 +247,55 @@ function SessionsSection() {
   )
 }
 
+// --- Бэкап ---
+
 function BackupSection() {
+  async function handleBackup() {
+    try {
+      await downloadBackup()
+    } catch (err) {
+      toast.error('Ошибка загрузки бэкапа')
+    }
+  }
+
   return (
-    <Section title="Резервные копии" description="Скачать дамп базы данных">
-      <div className="text-sm text-neutral-400 space-y-3">
-        <p>
+    <Section
+      title="Резервные копии"
+      description="Скачать дамп базы данных"
+      icon={<Shield size={16} />}
+    >
+      <div className="space-y-3">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           Дамп содержит пользователей, инбаунды, настройки и журнал аудита.
-          Трафик (таблица <code>traffic</code>) не сохраняется — при восстановлении
-          счётчики начнутся с нуля.
+          Трафик не сохраняется.
         </p>
-        <button
-          onClick={downloadBackup}
-          className="bg-white text-black font-medium text-sm rounded px-4 py-2 hover:bg-neutral-200"
-        >
-          Скачать бэкап
-        </button>
+        <Button onClick={handleBackup}>Скачать бэкап</Button>
       </div>
     </Section>
   )
 }
+
+// --- Аварийное восстановление ---
 
 function PanicSection() {
   return (
     <Section
       title="Аварийное восстановление"
       description="Если вы потеряли доступ к панели"
+      icon={<KeyRound size={16} />}
     >
-      <div className="text-sm text-neutral-400 space-y-2">
-        <p>Выполните на сервере (по SSH):</p>
-        <pre className="bg-neutral-900 border border-neutral-800 rounded p-3 text-xs font-mono overflow-x-auto">
+      <div className="space-y-3">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          Выполните на сервере по SSH:
+        </p>
+        <pre
+          className="rounded-lg p-4 text-xs font-mono overflow-x-auto"
+          style={{
+            background: '#0a0a0a',
+            border: '1px solid var(--border)',
+            color: 'var(--text-muted)',
+          }}
+        >
 {`gopanel reset-password --user admin --password "новый-пароль"
 
 # Сбросит пароль, отключит 2FA и завершит все сессии`}
@@ -233,6 +304,3 @@ function PanicSection() {
     </Section>
   )
 }
-
-const inputClass =
-  'w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-white outline-none focus:border-[color:var(--accent)] transition-colors'
