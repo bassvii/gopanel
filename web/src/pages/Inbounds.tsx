@@ -21,6 +21,7 @@ import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Button, Badge, Toggle } from '../components/ui'
+import { RefreshCw } from 'lucide-react'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -487,7 +488,6 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
         {/* Транспорт */}
         <Section title="Транспорт">
           <Radio
-            name="network"
             value={stream.network}
             onChange={(v) => setStream({ ...stream, network: v as StreamSettings['network'] })}
             options={[
@@ -573,7 +573,6 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
         {/* Безопасность */}
         <Section title="Безопасность">
           <Radio
-            name="security"
             value={stream.security}
             onChange={(v) => setStream({ ...stream, security: v as StreamSettings['security'] })}
             options={[
@@ -651,9 +650,11 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                     type="button"
                     onClick={handleGenerateKeys}
                     disabled={generating}
-                    className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm rounded px-3 py-2 whitespace-nowrap disabled:opacity-50"
+                    className="btn btn-secondary"
+                    style={{ whiteSpace: 'nowrap' }}
                   >
-                    {generating ? '...' : 'Сгенерировать'}
+                    <RefreshCw size={14} />
+                      {generating ? '...' : 'Сгенерировать'}
                   </button>
                 </div>
               </Field>
@@ -670,9 +671,11 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                     type="button"
                     onClick={handleGenerateShortID}
                     disabled={generating}
-                    className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm rounded px-3 py-2 whitespace-nowrap disabled:opacity-50"
+                    className="btn btn-secondary"
+                    style={{ whiteSpace: 'nowrap' }}
                   >
-                    + ShortID
+                    <RefreshCw size={14} />
+                      {generating ? '...' : 'Сгенерировать'}
                   </button>
                 </div>
               </Field>
@@ -801,7 +804,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
 // --- Вспомогательные компоненты ---
 
 const inputClass =
-  'w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white outline-none focus:border-neutral-600'
+  'w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-white outline-none focus:border-[color:var(--accent)] transition-colors'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -822,39 +825,50 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Radio({
-  name,
   value,
   onChange,
   options,
 }: {
-  name: string
   value: string
   onChange: (v: string) => void
   options: { value: string; label: string }[]
 }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {options.map((o) => (
-        <label
-          key={o.value}
-          className={
-            'text-sm rounded px-3 py-1.5 cursor-pointer transition-colors ' +
-            (value === o.value
-              ? 'bg-white text-black'
-              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700')
-          }
-        >
-          <input
-            type="radio"
-            name={name}
-            value={o.value}
-            checked={value === o.value}
-            onChange={() => onChange(o.value)}
-            className="sr-only"
-          />
-          {o.label}
-        </label>
-      ))}
+      {options.map((o) => {
+        const active = value === o.value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            className="text-sm px-3 py-2 transition-colors"
+            style={{
+              borderRadius: 8,
+              background: active ? 'var(--accent)' : 'var(--bg-surface)',
+              border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
+              color: active ? '#ffffff' : 'var(--text-muted)',
+              fontWeight: active ? 500 : 400,
+            }}
+            onMouseEnter={(e) => {
+              if (!active) {
+                e.currentTarget.style.background = 'var(--bg-surface-hover)'
+                e.currentTarget.style.borderColor = 'var(--border-strong)'
+                e.currentTarget.style.color = 'var(--text)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!active) {
+                e.currentTarget.style.background = 'var(--bg-surface)'
+                e.currentTarget.style.borderColor = 'var(--border)'
+                e.currentTarget.style.color = 'var(--text-muted)'
+              }
+            }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

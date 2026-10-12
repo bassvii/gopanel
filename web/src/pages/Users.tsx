@@ -527,4 +527,4 @@ function LinksModal({ user, onClose }: { user: User; onClose: () => void }) {
 }
 
 const inputClass =
-  'w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white outline-none focus:border-neutral-600'
+  'w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-white outline-none focus:border-[color:var(--accent)] transition-colors'

@@ -54,7 +54,7 @@ export function Audit() {
           placeholder="Поиск по действию, объекту, IP"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-white text-sm outline-none focus:border-neutral-600 w-72"
+          className="bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[color:var(--accent)] transition-colors w-72"
         />
       </div>
 
