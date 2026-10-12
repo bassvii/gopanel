@@ -194,6 +194,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/outbounds/", s.handleOutbound)
 	s.mux.HandleFunc(s.secret+"/routing/rules", s.handleRoutingRules)
 	s.mux.HandleFunc(s.secret+"/routing/rules/", s.handleRoutingRule)
+	s.mux.HandleFunc(s.secret+"/routing/presets", s.handleRoutingPresets)
+	s.mux.HandleFunc(s.secret+"/routing/presets/", s.handleRoutingPresetApply)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)
