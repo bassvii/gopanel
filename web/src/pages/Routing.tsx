@@ -142,9 +142,10 @@ function PresetsBar() {
           Быстрая настройка
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
-          {presets.map((p) => (
+          {presets.map((p, i) => (
             <Tooltip
               key={p.name}
+              align={i === presets.length - 1 ? 'right' : 'center'}
               content={`${p.description} (${p.rule_count} ${
                 p.rule_count === 1 ? 'правило' : p.rule_count < 5 ? 'правила' : 'правил'
               })`}
