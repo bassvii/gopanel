@@ -20,8 +20,8 @@ import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Button, Badge, Toggle } from '../components/ui'
 import { RefreshCw } from 'lucide-react'
+import { Button, Badge, Toggle, Select } from '../components/ui'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -402,13 +402,18 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
     setError('')
     setSaving(true)
 
+    const streamForSubmit = {
+      ...stream,
+      realityFlow: stream.realityFlow === '_none' ? '' : stream.realityFlow,
+    }
+
     const input: InboundInput = {
       tag,
       protocol,
       port: Number(port),
       listen,
       settings_json: settings,
-      stream_json: buildStreamJSON(stream),
+      stream_json: buildStreamJSON(streamForSubmit),
       sniffing_json: sniffing,
       enabled,
     }
@@ -448,20 +453,21 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
             />
           </Field>
 
-          <Field label="Протокол">
-            <select
+          <div>
+            <span className="text-sm text-neutral-400 block mb-1">Протокол</span>
+            <Select
               value={protocol}
-              onChange={(e) => setProtocol(e.target.value)}
-              className={inputClass}
-            >
-              <option value="vless">VLESS</option>
-              <option value="vmess">VMess</option>
-              <option value="trojan">Trojan</option>
-              <option value="shadowsocks">Shadowsocks</option>
-              <option value="socks">SOCKS</option>
-              <option value="http">HTTP</option>
-            </select>
-          </Field>
+              onChange={setProtocol}
+              options={[
+                { value: 'vless', label: 'VLESS' },
+                { value: 'vmess', label: 'VMess' },
+                { value: 'trojan', label: 'Trojan' },
+                { value: 'shadowsocks', label: 'Shadowsocks' },
+                { value: 'socks', label: 'SOCKS' },
+                { value: 'http', label: 'HTTP' },
+              ]}
+            />
+          </div>
 
           <Field label="Порт">
             <input
@@ -499,18 +505,17 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
           />
 
           {stream.network === 'tcp' && (
-            <Field label="HTTP-маскировка">
-              <select
+            <div>
+              <span className="text-sm text-neutral-400 block mb-1">HTTP-маскировка</span>
+              <Select
                 value={stream.tcpHeaderType}
-                onChange={(e) =>
-                  setStream({ ...stream, tcpHeaderType: e.target.value as 'none' | 'http' })
-                }
-                className={inputClass}
-              >
-                <option value="none">Нет</option>
-                <option value="http">HTTP</option>
-              </select>
-            </Field>
+                onChange={(v) => setStream({ ...stream, tcpHeaderType: v as 'none' | 'http' })}
+                options={[
+                  { value: 'none', label: 'Нет' },
+                  { value: 'http', label: 'HTTP' },
+                ]}
+              />
+            </div>
           )}
 
           {stream.network === 'ws' && (
@@ -554,18 +559,19 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                   className={inputClass}
                 />
               </Field>
-              <Field label="Mode">
-                <select
+              <div>
+                <span className="text-sm text-neutral-400 block mb-1">Mode</span>
+                <Select
                   value={stream.xhttpMode}
-                  onChange={(e) => setStream({ ...stream, xhttpMode: e.target.value })}
-                  className={inputClass}
-                >
-                  <option value="auto">auto</option>
-                  <option value="packet-up">packet-up</option>
-                  <option value="stream-up">stream-up</option>
-                  <option value="stream-one">stream-one</option>
-                </select>
-              </Field>
+                  onChange={(v) => setStream({ ...stream, xhttpMode: v })}
+                  options={[
+                    { value: 'auto', label: 'auto' },
+                    { value: 'packet-up', label: 'packet-up' },
+                    { value: 'stream-up', label: 'stream-up' },
+                    { value: 'stream-one', label: 'stream-one' },
+                  ]}
+                />
+              </div>
             </div>
           )}
         </Section>
@@ -593,18 +599,19 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                     className={inputClass}
                   />
                 </Field>
-                <Field label="Fingerprint">
-                  <select
+                <div>
+                  <span className="text-sm text-neutral-400 block mb-1">Fingerprint</span>
+                  <Select
                     value={stream.tlsFingerprint}
-                    onChange={(e) => setStream({ ...stream, tlsFingerprint: e.target.value })}
-                    className={inputClass}
-                  >
-                    <option value="chrome">chrome</option>
-                    <option value="firefox">firefox</option>
-                    <option value="safari">safari</option>
-                    <option value="random">random</option>
-                  </select>
-                </Field>
+                    onChange={(v) => setStream({ ...stream, tlsFingerprint: v })}
+                    options={[
+                      { value: 'chrome', label: 'chrome' },
+                      { value: 'firefox', label: 'firefox' },
+                      { value: 'safari', label: 'safari' },
+                      { value: 'random', label: 'random' },
+                    ]}
+                  />
+                </div>
               </div>
               <Field label="ALPN (через запятую)">
                 <input
@@ -681,28 +688,30 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Fingerprint">
-                  <select
+                <div>
+                  <span className="text-sm text-neutral-400 block mb-1">Fingerprint</span>
+                  <Select
                     value={stream.realityFingerprint}
-                    onChange={(e) => setStream({ ...stream, realityFingerprint: e.target.value })}
-                    className={inputClass}
-                  >
-                    <option value="chrome">chrome</option>
-                    <option value="firefox">firefox</option>
-                    <option value="safari">safari</option>
-                    <option value="random">random</option>
-                  </select>
-                </Field>
-                <Field label="Flow">
-                  <select
+                    onChange={(v) => setStream({ ...stream, realityFingerprint: v })}
+                    options={[
+                      { value: 'chrome', label: 'chrome' },
+                      { value: 'firefox', label: 'firefox' },
+                      { value: 'safari', label: 'safari' },
+                      { value: 'random', label: 'random' },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <span className="text-sm text-neutral-400 block mb-1">Flow</span>
+                  <Select
                     value={stream.realityFlow}
-                    onChange={(e) => setStream({ ...stream, realityFlow: e.target.value })}
-                    className={inputClass}
-                  >
-                    <option value="">(нет)</option>
-                    <option value="xtls-rprx-vision">xtls-rprx-vision</option>
-                  </select>
-                </Field>
+                    onChange={(v) => setStream({ ...stream, realityFlow: v })}
+                    options={[
+                      { value: '_none', label: '(нет)' },
+                      { value: 'xtls-rprx-vision', label: 'xtls-rprx-vision' },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
           )}
