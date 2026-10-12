@@ -7,6 +7,7 @@ import (
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/backup"
+	"github.com/bassvii/gopanel/internal/notify"
 )
 
 // handleBackupDownload — GET /backup/download
@@ -29,4 +30,5 @@ func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = audit.Log(s.db, sess.AdminID, "backup_download", name, clientIP(r))
+	notify.BackupCreated(s.db, s.log, name)
 }

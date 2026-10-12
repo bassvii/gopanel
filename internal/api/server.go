@@ -198,6 +198,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/routing/presets/", s.handleRoutingPresetApply)
 	s.mux.HandleFunc(s.secret+"/system/geo/status", s.handleGeoStatus)
 	s.mux.HandleFunc(s.secret+"/system/geo/update", s.handleGeoUpdate)
+	s.mux.HandleFunc(s.secret+"/notifications", s.handleNotifications)
+	s.mux.HandleFunc(s.secret+"/notifications/read", s.handleNotificationsRead)
 
 	if s.webFS != nil {
 		s.mux.HandleFunc("/", s.handleStatic)

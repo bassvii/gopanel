@@ -178,6 +178,23 @@ VALUES
     ('BLOCK', 'blackhole', '{}', '{}', 1, 1, strftime('%s','now'));
 `,
 	},
+	{
+		version: 7,
+		name:    "notifications",
+		sql: `
+CREATE TABLE notifications (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    category   TEXT    NOT NULL,
+    severity   TEXT    NOT NULL DEFAULT 'info',
+    title      TEXT    NOT NULL,
+    body       TEXT    NOT NULL DEFAULT '',
+    read_at    INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_notifications_unread ON notifications(read_at, created_at);
+CREATE INDEX idx_notifications_created ON notifications(created_at);
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {

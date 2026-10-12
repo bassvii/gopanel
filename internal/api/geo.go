@@ -8,6 +8,7 @@ import (
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/system"
+	"github.com/bassvii/gopanel/internal/notify"
 )
 
 // handleGeoStatus — GET /system/geo/status
@@ -54,6 +55,7 @@ func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = audit.Log(s.db, sess.AdminID, "geo_update", "", clientIP(r))
+	notify.GeoUpdated(s.db, s.log, updated)
 
 	// Перезапустить Xray, чтобы он подхватил новые файлы.
 	s.requestReload()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/audit"
+	"github.com/bassvii/gopanel/internal/notify"
 )
 
 const sessionCookieName = "gopanel_session"
@@ -72,6 +73,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
 		_ = auth.RecordFailedAttempt(s.db, ip)
 		_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, "wrong password", ip)
+		notify.LoginFailed(s.db, s.log, admin.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
 	}
@@ -107,6 +109,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = audit.Log(s.db, admin.ID, audit.ActionLogin, admin.Username, ip)
+	notify.LoginSuccess(s.db, s.log, admin.Username, ip)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
