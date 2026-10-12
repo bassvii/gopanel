@@ -287,7 +287,7 @@ func runServe(args []string) error {
 
 	// Устанавливаем ядро и системный сборщик.
 	srv.SetCore(core)
-	if v, err := core.Version(ctx); err == nil {
+	if v, err := core.Version(); err == nil {
 		srv.SetXrayVersion(v)
 	}
 	srv.SetSystemCollector(sysCollector, cfg.DBPath, time.Now())

@@ -58,7 +58,7 @@ func (c *Core) ConfigPath() string { return c.configPath }
 var versionRe = regexp.MustCompile(`Xray\s+(\S+)`)
 
 // Version запускает `xray version` и возвращает строку версии.
-func (c *Core) Version(ctx context.Context) (string, error) {
+func (c *Core) Version() (string, error) {
 	// Свой таймаут — не зависим от контекста HTTP-запроса.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

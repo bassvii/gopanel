@@ -109,7 +109,7 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 		s.log.Info("sysstats: xray IsRunning done", "running", resp.Xray.Running)
 
 		s.log.Info("sysstats: xray Version")
-		if v, err := s.core.Version(r.Context()); err == nil {
+		if v, err := s.core.Version(); err == nil {
 			resp.Xray.Version = v
 		} else {
 			s.log.Warn("sysstats: xray Version failed", "err", err)
