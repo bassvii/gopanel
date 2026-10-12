@@ -6,7 +6,6 @@ import {
   type FormEvent,
 } from 'react'
 import {
-  Sparkles,
   Loader2,
   Plus,
   Pencil,
@@ -37,7 +36,7 @@ import {
 import { ApiError } from '../api/client'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
-import { Button, Badge, Toggle, Select } from '../components/ui'
+import { Button, Badge, Toggle, Select, Tooltip } from '../components/ui'
 import { Modal } from '../components/Modal'
 import { RefreshCw } from 'lucide-react'
 import { getGeoStatus, updateGeo, type GeoStatus } from '../api/geo'
@@ -61,14 +60,18 @@ export function Routing() {
   return (
     <RefreshContext.Provider value={refreshAll}>
       <div className="flex-1 p-6 overflow-y-auto space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Маршрутизация</h2>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            Outbound'ы и правила распределения трафика
-          </p>
+        {/* Шапка с пресетами */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Маршрутизация</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Outbound'ы и правила распределения трафика
+            </p>
+          </div>
+
+          <PresetsBar />
         </div>
 
-        <PresetsSection />
         <OutboundsSection key={`out-${refreshKey}`} />
         <RulesSection key={`rules-${refreshKey}`} />
         <GeoSection />
@@ -77,9 +80,9 @@ export function Routing() {
   )
 }
 
-// --- Пресеты ---
+// --- Пресеты (компактная панель) ---
 
-function PresetsSection() {
+function PresetsBar() {
   const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(true)
   const [applying, setApplying] = useState<string | null>(null)
@@ -104,7 +107,7 @@ function PresetsSection() {
   async function handleApply(p: Preset) {
     const ok = await confirm({
       title: 'Применить пресет?',
-      message: `Будет добавлено ${p.rule_count} новых правил: «${p.description}». Существующие правила не удаляются.`,
+      message: `Будет добавлено ${p.rule_count} новых правил.\n\n${p.description}\n\nСуществующие правила не удаляются.`,
       confirmLabel: 'Применить',
     })
     if (!ok) return
@@ -121,81 +124,80 @@ function PresetsSection() {
     }
   }
 
-  return (
-    <div className="card">
-      <div
-        className="px-5 py-4 flex items-center gap-3"
-        style={{ borderBottom: '1px solid var(--border)' }}
-      >
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}
-        >
-          <Sparkles size={16} />
-        </div>
-        <div>
-          <div className="text-sm font-medium text-white">Быстрая настройка</div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            Готовые наборы правил — один клик
-          </div>
-        </div>
+  if (loading) {
+    return (
+      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Загрузка пресетов...
       </div>
+    )
+  }
 
-      <div className="p-5">
-        {loading ? (
-          <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            Загрузка...
-          </div>
-        ) : presets.length === 0 ? (
-          <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            Пресетов нет
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {presets.map((p) => (
+  return (
+    <>
+      <div className="flex flex-col items-end gap-2">
+        <div
+          className="text-xs uppercase tracking-wide"
+          style={{ color: 'var(--text-dim)' }}
+        >
+          Быстрая настройка
+        </div>
+        <div className="flex flex-wrap gap-2 justify-end">
+          {presets.map((p) => (
+            <Tooltip
+              key={p.name}
+              content={`${p.description} (${p.rule_count} ${
+                p.rule_count === 1 ? 'правило' : p.rule_count < 5 ? 'правила' : 'правил'
+              })`}
+            >
               <button
-                key={p.name}
                 onClick={() => handleApply(p)}
                 disabled={applying !== null}
-                className="text-left p-4 rounded-lg transition-colors disabled:opacity-50"
-                style={{ background: '#0a0a0a', border: '1px solid var(--border)' }}
+                className="text-xs px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                }}
                 onMouseEnter={(e) => {
                   if (applying === null) {
                     e.currentTarget.style.background = 'var(--bg-surface-hover)'
                     e.currentTarget.style.borderColor = 'var(--border-strong)'
+                    e.currentTarget.style.color = 'var(--text)'
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#0a0a0a'
+                  e.currentTarget.style.background = 'var(--bg-surface)'
                   e.currentTarget.style.borderColor = 'var(--border)'
+                  e.currentTarget.style.color = 'var(--text-muted)'
                 }}
               >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="text-sm font-medium text-white">{p.name}</div>
-                  {applying === p.name && (
-                    <Loader2
-                      size={14}
-                      className="animate-spin"
-                      style={{ color: 'var(--accent)' }}
-                    />
-                  )}
-                </div>
-                <div className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                  {p.description}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--text-dim)' }}>
-                  {p.rule_count}{' '}
-                  {p.rule_count === 1 ? 'правило' : p.rule_count < 5 ? 'правила' : 'правил'}
-                </div>
+                {applying === p.name ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Plus size={12} />
+                )}
+                {presetLabel(p.name)}
               </button>
-            ))}
-          </div>
-        )}
+            </Tooltip>
+          ))}
+        </div>
       </div>
 
       {dialog}
-    </div>
+    </>
   )
+}
+
+// presetLabel — короткое читаемое имя пресета.
+function presetLabel(name: string): string {
+  const labels: Record<string, string> = {
+    'full-ru-split': 'Полный РФ-сплит',
+    'ru-direct': 'РФ — напрямую',
+    'ads-block': 'Реклама — блок',
+    'private-direct': 'Приватные — напрямую',
+    'everything-proxy': 'Всё — через PROXY',
+  }
+  return labels[name] ?? name
 }
 
 // --- Outbound'ы ---
