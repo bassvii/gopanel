@@ -152,3 +152,57 @@ func TestGenerateUnsupported(t *testing.T) {
 		t.Error("expected error for unsupported protocol")
 	}
 }
+
+func TestGenerateHysteria2(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol: "hysteria",
+		Address:  "vpn.example.com",
+		Port:     8443,
+		SettingsJSON: `{"version":2,"users":[{"auth":"secret123","email":"user@gopanel"}]}`,
+		StreamJSON: `{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/path/cert.crt","keyFile":"/path/cert.key"}],"alpn":["h3"]},"hysteriaSettings":{"version":2}}`,
+		Remark:   "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Проверяем префикс и основные параметры.
+	if !strings.HasPrefix(got, "hysteria2://secret123@vpn.example.com:8443/") {
+		t.Errorf("got %q, want prefix hysteria2://secret123@vpn.example.com:8443/", got)
+	}
+	for _, want := range []string{"alpn=h3", "insecure=1", "#test"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestGenerateHysteria2IPv6(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol: "hysteria",
+		Address:  "2001:db8::1",
+		Port:     443,
+		SettingsJSON: `{"version":2,"users":[{"auth":"pass","email":"u@gopanel"}]}`,
+		StreamJSON: `{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/c","keyFile":"/k"}],"alpn":["h3"]}}`,
+		Remark:   "ipv6",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "@[2001:db8::1]:443") {
+		t.Errorf("got %q, want IPv6 in brackets", got)
+	}
+}
+
+func TestGenerateHysteria2NoAuth(t *testing.T) {
+	_, err := Generate(Input{
+		Protocol:     "hysteria",
+		Address:      "vpn.example.com",
+		Port:         8443,
+		SettingsJSON: `{"version":2,"users":[]}`,
+		StreamJSON:   `{"network":"hysteria","security":"tls"}`,
+	})
+	if err == nil {
+		t.Error("expected error when no auth found")
+	}
+}
