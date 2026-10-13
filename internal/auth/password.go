@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"sync"
 	"strings"
-	"os"
 
 	"golang.org/x/crypto/argon2"
 )
