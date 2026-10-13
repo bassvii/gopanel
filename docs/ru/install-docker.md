@@ -43,11 +43,14 @@ docker run -d \
     -e GOPANEL_PORT=44559 \
     -e GOPANEL_ALLOW_NON_LOOPBACK=1 \
     -e GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db \
-    -e GOPANEL_ADMIN_USER=admin \
-    -e GOPANEL_ADMIN_PASSWORD='сложный-пароль-минимум-12-символов' \
     -v gopanel-data:/var/lib/gopanel \
     gopanel:latest
 
+# Создать администратора (спросит пароль интерактивно)
+docker exec -it gopanel gopanel admin create \
+    --db /var/lib/gopanel/gopanel.db \
+    --user admin
+    
 # 4. Проверить логи
 docker logs gopanel
 
@@ -133,11 +136,14 @@ docker run -d \
     -e GOPANEL_PORT=44559 \
     -e GOPANEL_ALLOW_NON_LOOPBACK=1 \
     -e GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db \
-    -e GOPANEL_ADMIN_USER=admin \
-    -e GOPANEL_ADMIN_PASSWORD='сложный-пароль' \
     -v gopanel-data:/var/lib/gopanel \
     gopanel:latest
 ```
+
+# Создать администратора (спросит пароль интерактивно)
+```docker exec -it gopanel gopanel admin create \
+    --db /var/lib/gopanel/gopanel.db \
+    --user admin```
 
 ### Флаги
 
@@ -151,8 +157,6 @@ docker run -d \
 | `-e GOPANEL_PORT=44559` | фиксированный порт (иначе случайный) |
 | `-e GOPANEL_ALLOW_NON_LOOPBACK=1` | разрешить не-loopback (обязательно для Docker) |
 | `-e GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db` | путь к БД внутри контейнера |
-| `-e GOPANEL_ADMIN_USER=admin` | имя первого админа (создаётся один раз) |
-| `-e GOPANEL_ADMIN_PASSWORD=...` | пароль первого админа |
 | `-v gopanel-data:/var/lib/gopanel` | именованный том для БД |
 
 ### Важно про порты
@@ -200,7 +204,7 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:44559$BASE/me"
 
 1. Откройте `http://127.0.0.1:44559/BASE_PATH/`.
 2. Логин: `admin`.
-3. Пароль: из `GOPANEL_ADMIN_PASSWORD`.
+3. Пароль: тот, который вы ввели при `gopanel admin create`.
 
 ---
 
@@ -235,14 +239,21 @@ services:
       GOPANEL_PORT: "44559"
       GOPANEL_ALLOW_NON_LOOPBACK: "1"
       GOPANEL_DB_PATH: "/var/lib/gopanel/gopanel.db"
-      GOPANEL_ADMIN_USER: "admin"
-      GOPANEL_ADMIN_PASSWORD: "сложный-пароль-минимум-12-символов"
     volumes:
       - gopanel-data:/var/lib/gopanel
 
 volumes:
   gopanel-data:
 ```
+
+### Создание администратора
+
+После первого запуска создайте администратора:
+
+```bash
+docker compose exec gopanel gopanel admin create \
+    --db /var/lib/gopanel/gopanel.db \
+    --user admin
 
 ### 2. Запуск
 

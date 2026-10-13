@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+	"strings"
 )
 
 // withMiddleware оборачивает mux в цепочку middleware.
@@ -38,12 +39,25 @@ func (s *Server) logger(next http.Handler) http.Handler {
 		next.ServeHTTP(rw, r)
 		s.log.Info("http",
 			"method", r.Method,
-			"path", r.URL.Path,
+			"path", s.sanitizePath(r.URL.Path),
 			"status", rw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"remote", r.RemoteAddr,
 		)
 	})
+}
+
+// sanitizePath убирает секретный base path из пути, чтобы он
+// не попадал в логи. В логе остаётся /<endpoint>, а не /<hex>/<endpoint>.
+func (s *Server) sanitizePath(path string) string {
+	if s.secret != "" && strings.HasPrefix(path, s.secret) {
+		rest := strings.TrimPrefix(path, s.secret)
+		if rest == "" {
+			return "/"
+		}
+		return rest
+	}
+	return path
 }
 
 // securityHeaders выставляет базовые заголовки безопасности.

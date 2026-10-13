@@ -252,14 +252,10 @@ ${GREEN}Установка завершена.${NC}
 
       http://127.0.0.1:${port}${base}/
 
-  Первого админа создайте командой:
+  Первого админа создайте командой (спросит пароль интерактивно):
 
-      sudo -u gopanel ${GOPANEL_BIN} admin create --db ${GOPANEL_DB} \\
-          --user admin --password 'ваш-пароль'
-
-  Или через переменные окружения (для Docker):
-
-      GOPANEL_ADMIN_USER=admin GOPANEL_ADMIN_PASSWORD='пароль'
+        sudo -u gopanel ${GOPANEL_BIN} admin create --db ${GOPANEL_DB} \\
+            --user admin
 
   Управление сервисом:
 

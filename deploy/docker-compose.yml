@@ -18,9 +18,6 @@ services:
       - GOPANEL_LISTEN=0.0.0.0
       - GOPANEL_ALLOW_NON_LOOPBACK=1
       - GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db
-      # Первый админ (только при первом запуске).
-      - GOPANEL_ADMIN_USER=admin
-      - GOPANEL_ADMIN_PASSWORD=verylongpassword123
     volumes:
       - gopanel-data:/var/lib/gopanel
     # Xray внутри контейнера слушает 0.0.0.0 и порты инбаундов.

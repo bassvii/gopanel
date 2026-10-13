@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 	"path/filepath"
+    "golang.org/x/term"
 
 	"github.com/bassvii/gopanel/internal/system"
 	"github.com/bassvii/gopanel/internal/backup"
@@ -87,7 +88,13 @@ func runAdmin(args []string) error {
 		*password = os.Getenv("GOPANEL_ADMIN_PASSWORD")
 	}
 	if *password == "" {
-		return fmt.Errorf("password is required (--password or GOPANEL_ADMIN_PASSWORD)")
+		// Спрашиваем пароль интерактивно, чтобы он не попадал
+		// в ps и shell history.
+		p, err := readPasswordInteractive(*user)
+		if err != nil {
+			return err
+		}
+		*password = p
 	}
 
 	cfg, err := config.Load("", nil)
@@ -132,7 +139,11 @@ func runResetPassword(args []string) error {
 		*password = os.Getenv("GOPANEL_ADMIN_PASSWORD")
 	}
 	if *password == "" {
-		return fmt.Errorf("password is required (--password or GOPANEL_ADMIN_PASSWORD)")
+		p, err := readPasswordInteractive(*user)
+		if err != nil {
+			return err
+		}
+		*password = p
 	}
 
 	cfg, err := config.Load("", nil)
@@ -236,8 +247,11 @@ func runServe(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 4. Первый админ из env.
-	if err := ensureFirstAdmin(conn, log); err != nil {
+	// 4. Проверка, что админ вообще есть. Если нет — панель стартует,
+	// но пишет в лог, что нужно создать админа через CLI.
+	// Автосоздание из env убрано намеренно (см. SECURITY, пункт 2):
+	// пароль не должен лежать в переменных окружения из compose.
+	if err := checkAdminExists(conn, log); err != nil {
 		return err
 	}
 
@@ -365,26 +379,18 @@ func reloadLoop(ctx context.Context, srv *api.Server, core *xray.Core, conn *sql
 
 // --- helpers ---
 
-func ensureFirstAdmin(conn *sql.DB, log *slog.Logger) error {
+// checkAdminExists проверяет, что в базе есть хотя бы один админ.
+// Если нет — пишет в лог инструкцию, но не создаёт его автоматически:
+// админ должен задать пароль сам, через `gopanel admin create`.
+func checkAdminExists(conn *sql.DB, log *slog.Logger) error {
 	n, err := auth.CountAdmins(conn)
 	if err != nil {
 		return err
 	}
-	if n > 0 {
-		return nil
+	if n == 0 {
+		log.Warn("в базе нет администратора — создайте его командой: " +
+			"gopanel admin create --user admin")
 	}
-
-	user := os.Getenv("GOPANEL_ADMIN_USER")
-	pass := os.Getenv("GOPANEL_ADMIN_PASSWORD")
-	if user == "" || pass == "" {
-		return nil
-	}
-
-	id, err := auth.CreateAdmin(conn, user, pass)
-	if err != nil {
-		return fmt.Errorf("create first admin from env: %w", err)
-	}
-	log.Info("first admin created from env", "username", user, "id", id)
 	return nil
 }
 
@@ -600,4 +606,25 @@ func runBackup(args []string) error {
 	info, _ := os.Stat(out)
 	fmt.Printf("backup created: %s (%d bytes)\n", out, info.Size())
 	return nil
+}
+
+// readPasswordInteractive запрашивает пароль у пользователя без эха.
+// Пароль должен быть не короче MinPasswordLen (12 символов).
+func readPasswordInteractive(username string) (string, error) {
+	fmt.Printf("пароль для %q: ", username)
+	p1, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+	fmt.Print("повторите пароль: ")
+	p2, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+	if string(p1) != string(p2) {
+		return "", fmt.Errorf("пароли не совпадают")
+	}
+	return string(p1), nil
 }

@@ -139,10 +139,7 @@ func (s *Server) Start() error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	s.log.Info("admin listener started",
-		"addr", s.addr,
-		"base_path", s.secret,
-	)
+	s.log.Info("admin listener started", "addr", s.addr)
 
 	err = s.http.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {

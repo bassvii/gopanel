@@ -101,12 +101,17 @@ type RoutingRuleInput struct {
 // без него панель не сможет читать статистику.
 // BuildConfig собирает конфиг Xray из входных данных.
 func BuildConfig(in BuildInput) (*Config, error) {
+	outbounds, err := buildOutbounds(in.Outbounds)
+	if err != nil {
+		return nil, fmt.Errorf("outbounds: %w", err)
+	}
+
 	cfg := &Config{
 		Log:       map[string]any{"loglevel": "warning"},
 		Stats:     map[string]any{},
 		Policy:    defaultPolicy(),
 		API:       defaultAPI(),
-		Outbounds: buildOutbounds(in.Outbounds),
+		Outbounds: outbounds,
 		Routing:   buildRouting(in.Rules),
 	}
 
@@ -239,15 +244,24 @@ func defaultPolicy() map[string]any {
 
 func defaultAPI() map[string]any {
 	return map[string]any{
-		"tag":      "api",
-		"services": []string{"StatsService", "HandlerService"},
+		"tag": "api",
+		// HandlerService не включаем: он позволяет добавлять/удалять
+		// пользователей и менять инбаунды через локальный API Xray,
+		// а панель его сейчас не использует. Включать его нужно только
+		// вместе с unix-сокетом с правами 0600 (пункт 3 аудита).
+		"services": []string{"StatsService"},
 	}
 }
 
 
 // buildOutbounds формирует список outbound'ов для Xray.
 // Всегда добавляет freedom и blackhole, если их нет.
-func buildOutbounds(list []OutboundInput) []map[string]any {
+// buildOutbounds формирует список outbound'ов для Xray.
+// Всегда добавляет freedom и blackhole, если их нет.
+// Возвращает ошибку, если у outbound битый JSON — иначе конфиг
+// молча терял бы outbound, а правило маршрутизации ссылалось бы
+// на несуществующий тег.
+func buildOutbounds(list []OutboundInput) ([]map[string]any, error) {
 	hasFreedom := false
 	hasBlackhole := false
 	for _, o := range list {
@@ -282,11 +296,11 @@ func buildOutbounds(list []OutboundInput) []map[string]any {
 		}
 		settings, err := parseSettings(o.SettingsJSON)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("outbound %q settings: %w", o.Tag, err)
 		}
 		stream, err := parseSettings(o.StreamJSON)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("outbound %q stream: %w", o.Tag, err)
 		}
 
 		o2 := map[string]any{
@@ -302,7 +316,7 @@ func buildOutbounds(list []OutboundInput) []map[string]any {
 		out = append(out, o2)
 	}
 
-	return out
+	return out, nil
 }
 
 // buildRouting формирует блок routing.
