@@ -69,11 +69,23 @@ const presets: Preset[] = [
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
-    name: 'VMess',
-    protocol: 'vmess',
+    name: 'Hysteria2',
+    protocol: 'hysteria',
     defaultPort: 8443,
-    settings: JSON.stringify({}, null, 2),
-    stream: { ...defaultStreamSettings, network: 'tcp', security: 'none' },
+    settings: JSON.stringify(
+      {
+        version: 2,
+        users: [],
+      },
+      null,
+      2,
+    ),
+    stream: {
+      ...defaultStreamSettings,
+      network: 'hysteria',
+      security: 'tls',
+      tlsAlpn: 'h3',
+    },
     sniffing: JSON.stringify({ enabled: false }, null, 2),
   },
   {
