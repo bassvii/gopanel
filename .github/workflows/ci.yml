@@ -103,11 +103,19 @@ jobs:
         id: panel
         run: |
           ./bin/gopanel run --db /tmp/gp.db > /tmp/gopanel.log 2>&1 &
-          sleep 10
+          for i in $(seq 1 30); do
+            if grep -q "admin listener started" /tmp/gopanel.log; then break; fi
+            sleep 1
+          done
           cat /tmp/gopanel.log
           LINE=$(grep "admin listener started" /tmp/gopanel.log | head -1)
           PORT=$(echo "$LINE" | grep -oP 'addr=127.0.0.1:\K\d+')
-          BASE=$(echo "$LINE" | grep -oP 'base_path=\K/\S+')
+          # base_path читаем из файла рядом с БД (см. пункт 7 аудита).
+          BASE=$(cat /tmp/base_path 2>/dev/null || true)
+          if [ -z "$PORT" ] || [ -z "$BASE" ]; then
+            echo "Failed to parse port/base_path: PORT='$PORT' BASE='$BASE'"
+            exit 1
+          fi
           echo "port=$PORT" >> $GITHUB_OUTPUT
           echo "base_path=$BASE" >> $GITHUB_OUTPUT
           echo "PORT=$PORT BASE=$BASE"

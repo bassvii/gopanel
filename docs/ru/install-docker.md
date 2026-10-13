@@ -56,7 +56,8 @@ docker logs gopanel
 
 # 5. Открыть панель
 # http://127.0.0.1:44559/BASE_PATH/
-# BASE_PATH — из логов, строка base_path=...
+# BASE_PATH — из файла /var/lib/gopanel/base_path внутри контейнера:
+# docker exec gopanel cat /var/lib/gopanel/base_path
 ```
 
 ---
@@ -184,10 +185,13 @@ docker logs gopanel
 level=INFO msg="first admin created from env" username=admin id=1
 level=INFO msg="xray started" pid=22 config=/tmp/gopanel-xray.json
 level=INFO msg="frontend embedded"
-level=INFO msg="admin listener started" addr=[::]:44559 base_path=/7fee39ed0cc3e93666be46446375cffc
+level=INFO msg="admin listener started" addr=[::]:44559
 ```
 
-Запишите `base_path` — это `BASE_PATH` для URL.
+Секретный `base_path` записан в файл внутри тома:
+
+```bash
+docker exec gopanel cat /var/lib/gopanel/base_path
 
 Проверьте, что панель отвечает:
 
@@ -273,6 +277,7 @@ docker compose ps
 
 docker compose logs -f gopanel
 ```
+
 
 ### 4. Управление
 

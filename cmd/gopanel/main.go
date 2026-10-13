@@ -264,6 +264,9 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := writeBasePathFile(cfg.DBPath, basePath); err != nil {
+		return fmt.Errorf("write base path file: %w", err)
+	}
 
 	// 6. Xray.
 	core, err := xray.New(cfg.XrayBin, cfg.XrayConfigPath, log)
@@ -463,6 +466,27 @@ func generateBasePath() (string, error) {
 		return "", err
 	}
 	return "/" + hex.EncodeToString(b), nil
+}
+
+// basePathFile возвращает путь к файлу, куда пишется секретный base_path.
+// Файл лежит рядом с базой, с правами 0600 — читает только владелец.
+func basePathFile(dbPath string) string {
+	return filepath.Join(filepath.Dir(dbPath), "base_path")
+}
+
+// writeBasePathFile записывает base_path в файл 0600.
+// Файл нужен установщику и CI, чтобы не парсить лог сервиса
+// (см. пункт 7 аудита — base_path не должен попадать в журнал).
+func writeBasePathFile(dbPath, basePath string) error {
+	p := basePathFile(dbPath)
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, []byte(basePath+"\n"), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		return fmt.Errorf("rename %s: %w", p, err)
+	}
+	return nil
 }
 
 func newLogger(level string) *slog.Logger {

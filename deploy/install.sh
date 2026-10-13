@@ -227,14 +227,22 @@ print_info() {
     log_line=$(journalctl -u gopanel.service --no-pager | grep "admin listener started" | tail -1)
 
     if [[ -z "$log_line" ]]; then
-        warn "не удалось извлечь порт и base_path из лога"
+        warn "не удалось извлечь порт из лога"
         warn "проверьте: journalctl -u gopanel.service -n 50"
         return
     fi
 
     local port base
     port=$(echo "$log_line" | grep -oP 'addr=127.0.0.1:\K\d+')
-    base=$(echo "$log_line" | grep -oP 'base_path=\K/\S+')
+
+    # base_path читаем из файла рядом с БД (см. пункт 7 аудита).
+    local base_file="${GOPANEL_DIR}/base_path"
+    if [[ -r "$base_file" ]]; then
+        base=$(cat "$base_file")
+    else
+        warn "файл $base_file недоступен, base_path не показан"
+        base=""
+    fi
 
     cat <<EOF
 
