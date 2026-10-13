@@ -104,3 +104,91 @@ func ClearFailedAttempts(conn *sql.DB, ip string) error {
 	_, err := conn.Exec(`DELETE FROM login_attempts WHERE ip = ?`, ip)
 	return err
 }
+
+// --- Lockout по админу (защита от смены IP) ---
+
+// --- Lockout по админу (защита от смены IP) ---
+
+// IsAdminLockedOut проверяет, заблокирован ли админ.
+func IsAdminLockedOut(conn *sql.DB, adminID int64) (bool, time.Duration, error) {
+	var lockedUntil int64
+	err := conn.QueryRow(
+		`SELECT locked_until FROM admin_lockouts WHERE admin_id = ?`,
+		adminID,
+	).Scan(&lockedUntil)
+	if err == sql.ErrNoRows {
+		return false, 0, nil
+	}
+	if err != nil {
+		return false, 0, fmt.Errorf("get admin lockout: %w", err)
+	}
+	now := time.Now().Unix()
+	if lockedUntil > now {
+		return true, time.Duration(lockedUntil-now) * time.Second, nil
+	}
+	return false, 0, nil
+}
+
+// RecordAdminFailedAttempt увеличивает счётчик неудач для админа.
+func RecordAdminFailedAttempt(conn *sql.DB, adminID int64) error {
+	now := time.Now().Unix()
+	windowStart := now - int64(FailedAttemptWindow.Seconds())
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var (
+		count       int
+		firstFailed int64
+	)
+	err = tx.QueryRow(
+		`SELECT count, first_failed FROM admin_lockouts WHERE admin_id = ?`,
+		adminID,
+	).Scan(&count, &firstFailed)
+	if err == sql.ErrNoRows {
+		if _, err := tx.Exec(
+			`INSERT INTO admin_lockouts (admin_id, count, first_failed, locked_until)
+			 VALUES (?, 1, ?, 0)`,
+			adminID, now,
+		); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	if err != nil {
+		return err
+	}
+
+	if firstFailed < windowStart {
+		if _, err := tx.Exec(
+			`UPDATE admin_lockouts SET count = 1, first_failed = ?, locked_until = 0 WHERE admin_id = ?`,
+			now, adminID,
+		); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+
+	count++
+	var lockedUntil int64
+	if count >= MaxFailedAttempts {
+		lockedUntil = now + int64(LockoutDuration.Seconds())
+	}
+
+	if _, err := tx.Exec(
+		`UPDATE admin_lockouts SET count = ?, locked_until = ? WHERE admin_id = ?`,
+		count, lockedUntil, adminID,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ClearAdminFailedAttempts сбрасывает счётчик после успешного входа.
+func ClearAdminFailedAttempts(conn *sql.DB, adminID int64) error {
+	_, err := conn.Exec(`DELETE FROM admin_lockouts WHERE admin_id = ?`, adminID)
+	return err
+}

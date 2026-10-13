@@ -60,6 +60,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	admin, err := auth.GetAdminByUsername(s.db, req.Username)
 	if errors.Is(err, sql.ErrNoRows) {
+		auth.VerifyPasswordDummy(req.Password)
 		_ = auth.RecordFailedAttempt(s.db, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
@@ -70,36 +71,62 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка lockout по админу.
+	adminLocked, adminWait, err := auth.IsAdminLockedOut(s.db, admin.ID)
+	if err != nil {
+		s.log.Error("admin lockout check failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if adminLocked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(adminWait.Seconds())))
+		writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
+		return
+	}
+
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = auth.RecordFailedAttempt(s.db, ip)
-		_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, "wrong password", ip)
+		_ = auth.RecordFailedAttempt(s.db, ip)          // IP-счётчик
+		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID) // + admin-счётчик
 		notify.LoginFailed(s.db, s.log, admin.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
 	}
 
-	_ = auth.ClearFailedAttempts(s.db, ip)
-
-	// Если у админа включена 2FA — требуем код.
+	// --- TOTP ---
+	// НЕ сбрасываем счётчик после пароля! Только после полного успеха.
+	totpOK := false
 	if admin.TOTPSecret != "" {
 		if req.TOTPCode == "" {
+			_ = auth.RecordFailedAttempt(s.db, ip)
+			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
 			writeJSON(w, http.StatusUnauthorized, loginResponse{
-				Error:    "totp_required",
 				NeedsTOTP: true,
+				Error:     "totp_required",
 			})
 			return
 		}
-		if !auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode) {
-			if err := auth.ConsumeRecoveryCode(s.db, admin.ID, req.TOTPCode); err != nil {
-				_ = auth.RecordFailedAttempt(s.db, ip)
-				_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, "wrong totp", ip)
-				writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid code"})
-				return
+		if auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode) {
+			totpOK = true
+		} else {
+			// Попробовать recovery-код.
+			if err := auth.ConsumeRecoveryCode(s.db, admin.ID, req.TOTPCode); err == nil {
+				totpOK = true
+				_ = audit.Log(s.db, admin.ID, audit.ActionRecoveryUsed, "", ip)
 			}
-			_ = audit.Log(s.db, admin.ID, audit.ActionRecoveryUsed, "", ip)
 		}
-
+		if !totpOK {
+			_ = auth.RecordFailedAttempt(s.db, ip)
+			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+			notify.LoginFailed(s.db, s.log, admin.Username, ip)
+			writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid code"})
+			return
+		}
 	}
+
+	// --- Успех ---
+	// Только теперь сбрасываем счётчик.
+	_ = auth.ClearFailedAttempts(s.db, ip)
+	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	token, sess, err := auth.NewSession(s.db, admin.ID, ip, r.UserAgent())
 	if err != nil {
@@ -117,7 +144,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     s.secret,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   false, // админка на loopback, HTTPS не нужен
+		Secure:   false,
 		MaxAge:   int(auth.SessionTTL.Seconds()),
 	})
 

@@ -124,3 +124,21 @@ func decodeHash(encoded string) (argonParams, []byte, []byte, error) {
 
 	return p, salt, hash, nil
 }
+
+// dummyHash — заранее посчитанный argon2id-хеш для защиты от тайминг-атак.
+// Соответствует паролю "this-password-does-not-match-anything".
+var dummyHash string
+
+func init() {
+	h, err := HashPassword("this-password-does-not-match-anything-1234567890")
+	if err == nil {
+		dummyHash = h
+	}
+}
+
+// VerifyPasswordDummy — прогоняет проверку пароля против фиктивного хеша.
+// Используется, когда пользователь не найден, чтобы время ответа
+// не отличалось от случая с существующим логином.
+func VerifyPasswordDummy(password string) {
+	_ = VerifyPassword(password, dummyHash)
+}

@@ -209,6 +209,18 @@ ALTER TABLE inbounds ADD COLUMN reality_public_key TEXT NOT NULL DEFAULT '';
 ALTER TABLE inbounds ADD COLUMN vless_enc_client TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 10,
+		name:    "admin lockouts",
+		sql: `
+CREATE TABLE admin_lockouts (
+    admin_id     INTEGER PRIMARY KEY,
+    count        INTEGER NOT NULL DEFAULT 0,
+    first_failed INTEGER NOT NULL DEFAULT 0,
+    locked_until INTEGER NOT NULL DEFAULT 0
+);
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {
