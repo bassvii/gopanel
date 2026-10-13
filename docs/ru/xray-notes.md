@@ -118,3 +118,45 @@ usage: xray api adu [--server=127.0.0.1:8080] <c1.json> [c2.json]...
 - Проверка версии: `xray version` → первая строка "Xray 26.3.27 (...)".
 - Проверка конфига: `xray run -test -c <файл>` → exit 0 при успехе.
 - Панель вызывает эти команды через os/exec.
+
+
+## 8. Hysteria2 в Xray-core
+
+Проверено 13 октября 2026, Xray 26.3.27.
+
+- **Protocol:** `hysteria`, version 2.
+- **Transport:** `streamSettings.network: "hysteria"`.
+- **TLS обязателен:** `security: "tls"`, `alpn: ["h3"]`.
+- **Сертификат:** `xray tls cert` создаёт самоподписанный.
+- **Users:** `settings.users[]` — обязательны `auth` (пароль) и `email`.
+- **Порт:** UDP (QUIC). `ss -ulnp`, не `-tlnp`.
+- **StatsService:** `user>>>[email]>>>traffic>>>uplink/downlink` — email обязателен.
+- **Команда проверки:** `xray run -test -c ...`.
+
+### Пример конфига
+
+\```json
+{
+  "inbounds": [
+    {
+      "tag": "hysteria-in",
+      "listen": "0.0.0.0",
+      "port": 1444,
+      "protocol": "hysteria",
+      "settings": {
+        "version": 2,
+        "users": [{ "auth": "testpassword123", "email": "hysteria@test" }]
+      },
+      "streamSettings": {
+        "network": "hysteria",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [{ "certificateFile": "...", "keyFile": "..." }],
+          "alpn": ["h3"]
+        },
+        "hysteriaSettings": { "version": 2 }
+      }
+    }
+  ]
+}
+\```
