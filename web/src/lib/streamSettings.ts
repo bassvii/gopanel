@@ -17,6 +17,12 @@ export interface StreamSettings {
   xhttpPath: string
   xhttpHost: string
   xhttpMode: string
+  xhttpExtraEnabled: boolean       // показывать ли extra-поля
+  xhttpPaddingBytes: string        // "100-1000" или "0"
+  xhttpMaxPostBytes: string        // "1000000"
+  xhttpMaxBuffered: number         // 30
+  xhttpStreamUpSecs: string        // "20-80"
+  xhttpNoSSE: boolean              // убрать SSE-заголовок
 
   // TLS
   tlsServerName: string
@@ -43,6 +49,12 @@ export const defaultStreamSettings: StreamSettings = {
   xhttpPath: '/',
   xhttpHost: '',
   xhttpMode: 'auto',
+  xhttpExtraEnabled: false,
+  xhttpPaddingBytes: '',
+  xhttpMaxPostBytes: '',
+  xhttpMaxBuffered: 30,
+  xhttpStreamUpSecs: '',
+  xhttpNoSSE: false,
   tlsServerName: '',
   tlsAlpn: '',
   tlsFingerprint: 'chrome',
@@ -108,11 +120,22 @@ export function parseStreamJSON(json: string): StreamSettings {
   }
 
   // XHTTP
+  // XHTTP
   if (out.network === 'xhttp') {
     const xhttp = raw.xhttpSettings as Record<string, unknown> | undefined
     if (typeof xhttp?.path === 'string') out.xhttpPath = xhttp.path
     if (typeof xhttp?.host === 'string') out.xhttpHost = xhttp.host
     if (typeof xhttp?.mode === 'string') out.xhttpMode = xhttp.mode
+
+    const extra = xhttp?.extra as Record<string, unknown> | undefined
+    if (extra && Object.keys(extra).length > 0) {
+      out.xhttpExtraEnabled = true
+      if (typeof extra.xPaddingBytes === 'string') out.xhttpPaddingBytes = extra.xPaddingBytes
+      if (typeof extra.scMaxEachPostBytes === 'string') out.xhttpMaxPostBytes = extra.scMaxEachPostBytes
+      if (typeof extra.scMaxBufferedPosts === 'number') out.xhttpMaxBuffered = extra.scMaxBufferedPosts
+      if (typeof extra.scStreamUpServerSecs === 'string') out.xhttpStreamUpSecs = extra.scStreamUpServerSecs
+      if (extra.noSSEHeader === true) out.xhttpNoSSE = true
+    }
   }
 
   // TLS
@@ -174,15 +197,28 @@ export function buildStreamJSON(s: StreamSettings): string {
         serviceName: s.grpcServiceName || '',
       }
       break
-    case 'xhttp':
-      out.xhttpSettings = {
-        path: s.xhttpPath || '/',
-        mode: s.xhttpMode || 'auto',
-        ...(s.xhttpHost ? { host: s.xhttpHost } : {}),
-      }
-      break
-  }
+      case 'xhttp': {
+        const xhttp: Record<string, unknown> = {
+          path: s.xhttpPath || '/',
+          mode: s.xhttpMode || 'auto',
+        }
+        if (s.xhttpHost) xhttp.host = s.xhttpHost
 
+        // Extra-поля (только если включены).
+        if (s.xhttpExtraEnabled) {
+          const extra: Record<string, unknown> = {}
+          if (s.xhttpPaddingBytes) extra.xPaddingBytes = s.xhttpPaddingBytes
+          if (s.xhttpMaxPostBytes) extra.scMaxEachPostBytes = s.xhttpMaxPostBytes
+          if (s.xhttpMaxBuffered > 0) extra.scMaxBufferedPosts = s.xhttpMaxBuffered
+          if (s.xhttpStreamUpSecs) extra.scStreamUpServerSecs = s.xhttpStreamUpSecs
+          if (s.xhttpNoSSE) extra.noSSEHeader = true
+          if (Object.keys(extra).length > 0) xhttp.extra = extra
+        }
+
+        out.xhttpSettings = xhttp
+        break
+      }
+    }
   // Безопасность.
   if (s.security === 'tls') {
     const tls: Record<string, unknown> = {}

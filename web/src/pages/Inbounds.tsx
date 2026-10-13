@@ -587,14 +587,25 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
           )}
 
           {stream.network === 'xhttp' && (
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Path">
-                <input
-                  value={stream.xhttpPath}
-                  onChange={(e) => setStream({ ...stream, xhttpPath: e.target.value })}
-                  className={inputClass}
-                />
-              </Field>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Path">
+                  <input
+                    value={stream.xhttpPath}
+                    onChange={(e) => setStream({ ...stream, xhttpPath: e.target.value })}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Host (опционально)">
+                  <input
+                    value={stream.xhttpHost}
+                    onChange={(e) => setStream({ ...stream, xhttpHost: e.target.value })}
+                    placeholder="example.com"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+
               <div>
                 <span className="text-sm text-neutral-400 block mb-1">Mode</span>
                 <Select
@@ -608,6 +619,67 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                   ]}
                 />
               </div>
+
+              <label className="flex items-center gap-2 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={stream.xhttpExtraEnabled}
+                  onChange={(e) => setStream({ ...stream, xhttpExtraEnabled: e.target.checked })}
+                />
+                Дополнительные параметры (для CDN и обхода детекции)
+              </label>
+
+              {stream.xhttpExtraEnabled && (
+                <div className="border border-neutral-800 rounded p-4 space-y-3">
+                  <Field label="xPaddingBytes (диапазон)">
+                    <input
+                      value={stream.xhttpPaddingBytes}
+                      onChange={(e) => setStream({ ...stream, xhttpPaddingBytes: e.target.value })}
+                      placeholder="100-1000"
+                      className={inputClass + ' font-mono text-xs'}
+                    />
+                  </Field>
+
+                  <Field label="scMaxEachPostBytes">
+                    <input
+                      value={stream.xhttpMaxPostBytes}
+                      onChange={(e) => setStream({ ...stream, xhttpMaxPostBytes: e.target.value })}
+                      placeholder="1000000"
+                      className={inputClass + ' font-mono text-xs'}
+                    />
+                  </Field>
+
+                  <Field label="scMaxBufferedPosts">
+                    <input
+                      type="number"
+                      value={String(stream.xhttpMaxBuffered)}
+                      onChange={(e) =>
+                        setStream({ ...stream, xhttpMaxBuffered: Number(e.target.value) || 0 })
+                      }
+                      min={0}
+                      className={inputClass + ' font-mono text-xs'}
+                    />
+                  </Field>
+
+                  <Field label="scStreamUpServerSecs (диапазон)">
+                    <input
+                      value={stream.xhttpStreamUpSecs}
+                      onChange={(e) => setStream({ ...stream, xhttpStreamUpSecs: e.target.value })}
+                      placeholder="20-80"
+                      className={inputClass + ' font-mono text-xs'}
+                    />
+                  </Field>
+
+                  <label className="flex items-center gap-2 text-sm text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={stream.xhttpNoSSE}
+                      onChange={(e) => setStream({ ...stream, xhttpNoSSE: e.target.checked })}
+                    />
+                    noSSEHeader (убрать заголовок text/event-stream)
+                  </label>
+                </div>
+              )}
             </div>
           )}
         </Section>
