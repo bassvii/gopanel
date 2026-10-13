@@ -97,11 +97,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	totpOK := false
 	if admin.TOTPSecret != "" {
 		if req.TOTPCode == "" {
-			_ = auth.RecordFailedAttempt(s.db, ip)
-			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
-			writeJSON(w, http.StatusUnauthorized, loginResponse{
+			writeJSON(w, http.StatusOK, loginResponse{
 				NeedsTOTP: true,
-				Error:     "totp_required",
 			})
 			return
 		}
