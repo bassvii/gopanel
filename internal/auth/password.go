@@ -9,7 +9,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 	"strings"
+	"os"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -125,20 +127,29 @@ func decodeHash(encoded string) (argonParams, []byte, []byte, error) {
 	return p, salt, hash, nil
 }
 
-// dummyHash — заранее посчитанный argon2id-хеш для защиты от тайминг-атак.
-// Соответствует паролю "this-password-does-not-match-anything".
-var dummyHash string
 
-func init() {
-	h, err := HashPassword("this-password-does-not-match-anything-1234567890")
-	if err == nil {
-		dummyHash = h
-	}
+// dummyHash — заранее посчитанный argon2id-хеш для защиты от тайминг-атак.
+var (
+	dummyHash string
+	dummyOnce sync.Once
+)
+
+func ensureDummyHash() {
+	dummyOnce.Do(func() {
+		h, err := HashPassword("dummy-password-for-timing-safety-abcdef1234")
+		if err == nil {
+			dummyHash = h
+		}
+	})
 }
 
-// VerifyPasswordDummy — прогоняет проверку пароля против фиктивного хеша.
+// VerifyPasswordDummy прогоняет проверку пароля против фиктивного хеша.
 // Используется, когда пользователь не найден, чтобы время ответа
 // не отличалось от случая с существующим логином.
 func VerifyPasswordDummy(password string) {
+	ensureDummyHash()
+	if dummyHash == "" {
+		return
+	}
 	_ = VerifyPassword(password, dummyHash)
 }
