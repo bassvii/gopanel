@@ -61,6 +61,7 @@ func VerifyTOTP(secret, code string) bool {
 }
 
 // SaveTOTPSecret сохраняет секрет у администратора (включение 2FA).
+// SaveTOTPSecret сохраняет секрет у администратора (включение 2FA).
 func SaveTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
 	_, err := conn.Exec(
 		`UPDATE admins SET totp_secret = ? WHERE id = ?`,
@@ -72,6 +73,61 @@ func SaveTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
 	return nil
 }
 
+// SavePendingTOTPSecret сохраняет «черновой» секрет, ещё не подтверждённый
+// кодом из приложения. Не включается в totp_secret и не влияет на вход.
+func SavePendingTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
+	_, err := conn.Exec(
+		`UPDATE admins SET totp_pending_secret = ? WHERE id = ?`,
+		secret, adminID,
+	)
+	if err != nil {
+		return fmt.Errorf("save pending totp secret: %w", err)
+	}
+	return nil
+}
+
+// GetPendingTOTPSecret возвращает черновой секрет (или пустую строку).
+func GetPendingTOTPSecret(conn *sql.DB, adminID int64) (string, error) {
+	var s string
+	err := conn.QueryRow(
+		`SELECT totp_pending_secret FROM admins WHERE id = ?`,
+		adminID,
+	).Scan(&s)
+	if err != nil {
+		return "", fmt.Errorf("get pending totp secret: %w", err)
+	}
+	return s, nil
+}
+
+// ActivatePendingTOTP переносит черновой секрет в активный и очищает pending.
+// Вызывается только после успешной проверки кода в /2fa/enable.
+func ActivatePendingTOTP(conn *sql.DB, adminID int64) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var pending string
+	if err := tx.QueryRow(
+		`SELECT totp_pending_secret FROM admins WHERE id = ?`,
+		adminID,
+	).Scan(&pending); err != nil {
+		return fmt.Errorf("get pending: %w", err)
+	}
+	if pending == "" {
+		return errors.New("no pending totp secret")
+	}
+
+	if _, err := tx.Exec(
+		`UPDATE admins SET totp_secret = ?, totp_pending_secret = '' WHERE id = ?`,
+		pending, adminID,
+	); err != nil {
+		return fmt.Errorf("activate pending: %w", err)
+	}
+	return tx.Commit()
+}
+
 // ClearTOTPSecret отключает 2FA у администратора.
 func ClearTOTPSecret(conn *sql.DB, adminID int64) error {
 	tx, err := conn.Begin()
@@ -80,7 +136,10 @@ func ClearTOTPSecret(conn *sql.DB, adminID int64) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`UPDATE admins SET totp_secret = '' WHERE id = ?`, adminID); err != nil {
+	if _, err := tx.Exec(
+		`UPDATE admins SET totp_secret = '', totp_pending_secret = '' WHERE id = ?`,
+		adminID,
+	); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM recovery_codes WHERE admin_id = ?`, adminID); err != nil {

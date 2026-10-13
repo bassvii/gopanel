@@ -15,12 +15,13 @@ var ErrNoAdmins = errors.New("no admins in database")
 
 // Admin — запись администратора.
 type Admin struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	TOTPSecret   string
-	Role         string
-	CreatedAt    time.Time
+	ID                int64
+	Username          string
+	PasswordHash      string
+	TOTPSecret        string
+	TOTPPendingSecret string
+	Role              string
+	CreatedAt         time.Time
 }
 
 // CountAdmins возвращает число админов в базе.
@@ -65,10 +66,10 @@ func GetAdminByUsername(conn *sql.DB, username string) (Admin, error) {
 	var a Admin
 	var createdAt int64
 	err := conn.QueryRow(
-		`SELECT id, username, password_hash, totp_secret, role, created_at
+		`SELECT id, username, password_hash, totp_secret, totp_pending_secret, role, created_at
 		 FROM admins WHERE username = ?`,
 		username,
-	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.Role, &createdAt)
+	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.TOTPPendingSecret, &a.Role, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, sql.ErrNoRows
 	}
@@ -104,10 +105,10 @@ func GetAdminByID(conn *sql.DB, id int64) (Admin, error) {
 	var a Admin
 	var createdAt int64
 	err := conn.QueryRow(
-		`SELECT id, username, password_hash, totp_secret, role, created_at
+		`SELECT id, username, password_hash, totp_secret, totp_pending_secret, role, created_at
 		 FROM admins WHERE id = ?`,
 		id,
-	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.Role, &createdAt)
+	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.TOTPPendingSecret, &a.Role, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, sql.ErrNoRows
 	}

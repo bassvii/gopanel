@@ -35,7 +35,7 @@ func ResetPassword(conn *sql.DB, username, newPassword string) error {
 	}
 
 	if _, err := tx.Exec(
-		`UPDATE admins SET password_hash = ?, totp_secret = '' WHERE id = ?`,
+		`UPDATE admins SET password_hash = ?, totp_secret = '', totp_pending_secret = '' WHERE id = ?`,
 		hash, adminID,
 	); err != nil {
 		return fmt.Errorf("update admin: %w", err)

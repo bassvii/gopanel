@@ -54,8 +54,8 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := auth.SaveTOTPSecret(s.db, sess.AdminID, secret); err != nil {
-		s.log.Error("save totp secret failed", "err", err)
+	if err := auth.SavePendingTOTPSecret(s.db, sess.AdminID, secret); err != nil {
+		s.log.Error("save pending totp secret failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -108,17 +108,29 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admin, err := getAdminByID(s.db, sess.AdminID)
+	pending, err := auth.GetPendingTOTPSecret(s.db, sess.AdminID)
 	if err != nil {
-		s.log.Error("get admin failed", "err", err)
+		s.log.Error("get pending totp failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	if pending == "" {
+		writeJSON(w, http.StatusBadRequest, totpEnableResponse{
+			Error: "setup not started",
+		})
+		return
+	}
 
-	if !auth.VerifyTOTP(admin.TOTPSecret, req.Code) {
+	if !auth.VerifyTOTP(pending, req.Code) {
 		writeJSON(w, http.StatusUnauthorized, totpEnableResponse{
 			Error: "invalid code",
 		})
+		return
+	}
+
+	if err := auth.ActivatePendingTOTP(s.db, sess.AdminID); err != nil {
+		s.log.Error("activate totp failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -179,10 +191,10 @@ func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 func getAdminByID(conn *sql.DB, id int64) (auth.Admin, error) {
 	var a auth.Admin
 	err := conn.QueryRow(
-		`SELECT id, username, password_hash, totp_secret, role
+		`SELECT id, username, password_hash, totp_secret, totp_pending_secret, role
 		 FROM admins WHERE id = ?`,
 		id,
-	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.Role)
+	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.TOTPPendingSecret, &a.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, sql.ErrNoRows
 	}
