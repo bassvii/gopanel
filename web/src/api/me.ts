@@ -21,3 +21,44 @@ export async function revokeSession(id: string): Promise<void> {
 export async function revokeOtherSessions(): Promise<void> {
   await request('/me/sessions', { method: 'DELETE', withCSRF: true })
 }
+
+
+// --- 2FA (TOTP) ---
+
+export interface TOTPSetupResponse {
+  secret: string
+  otpauth_url: string
+}
+
+export interface TOTPEnableResponse {
+  ok: boolean
+  recovery_codes?: string[]
+  error?: string
+}
+
+export async function getTOTPStatus(): Promise<boolean> {
+  const res = await request<{ enabled: boolean }>('/2fa/status')
+  return res.enabled ?? false
+}
+
+export async function setupTOTP(): Promise<TOTPSetupResponse> {
+  return request<TOTPSetupResponse>('/2fa/setup', {
+    method: 'POST',
+    withCSRF: true,
+  })
+}
+
+export async function enableTOTP(code: string): Promise<TOTPEnableResponse> {
+  return request<TOTPEnableResponse>('/2fa/enable', {
+    method: 'POST',
+    body: { code },
+    withCSRF: true,
+  })
+}
+
+export async function disableTOTP(): Promise<void> {
+  await request('/2fa/disable', {
+    method: 'POST',
+    withCSRF: true,
+  })
+}

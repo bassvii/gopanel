@@ -1,11 +1,23 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { KeyRound, LogOut, Shield } from 'lucide-react'
-import { changePassword, listSessions, revokeSession, revokeOtherSessions } from '../api/me'
+import { Copy, KeyRound, LogOut, Shield, ShieldCheck, ShieldOff } from 'lucide-react'
+import {
+  changePassword,
+  listSessions,
+  revokeSession,
+  revokeOtherSessions,
+  getTOTPStatus,
+  setupTOTP,
+  enableTOTP,
+  disableTOTP,
+  type TOTPSetupResponse,
+} from '../api/me'
 import { downloadBackup } from '../api/backup'
 import { ApiError } from '../api/client'
 import { toast } from 'sonner'
 import { Button, Input } from '../components/ui'
 import type { Session } from '../api/types'
+import { getBasePath } from '../lib/basePath'
+import { useConfirm } from '../hooks/useConfirm'
 
 export function Settings() {
   return (
@@ -19,6 +31,7 @@ export function Settings() {
       </div>
 
       <PasswordSection />
+      <TOTPSection />
       <SessionsSection />
       <BackupSection />
       <PanicSection />
@@ -301,6 +314,248 @@ function PanicSection() {
 # Сбросит пароль, отключит 2FA и завершит все сессии`}
         </pre>
       </div>
+    </Section>
+  )
+}
+
+
+// --- Двухфакторная аутентификация ---
+
+function TOTPSection() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [setupData, setSetupData] = useState<TOTPSetupResponse | null>(null)
+  const [code, setCode] = useState('')
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const { confirm, dialog } = useConfirm()
+
+  async function reload() {
+    setLoading(true)
+    try {
+      setEnabled(await getTOTPStatus())
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка загрузки статуса 2FA')
+      setEnabled(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    reload()
+  }, [])
+
+  async function handleSetup() {
+    setError('')
+    setBusy(true)
+    try {
+      setSetupData(await setupTOTP())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка настройки 2FA')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleEnable() {
+    if (!code) {
+      setError('Введите код из приложения')
+      return
+    }
+    setError('')
+    setBusy(true)
+    try {
+      const res = await enableTOTP(code)
+      if (!res.ok) {
+        setError(res.error || 'Неверный код')
+        return
+      }
+      setRecoveryCodes(res.recovery_codes ?? [])
+      setSetupData(null)
+      setCode('')
+      setEnabled(true)
+      toast.success('2FA включена')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDisable() {
+    const ok = await confirm({
+      title: 'Отключить 2FA?',
+      message:
+        'После отключения вход в панель будет защищён только паролем. Это снижает безопасность.',
+      confirmLabel: 'Отключить',
+      danger: true,
+    })
+    if (!ok) return
+
+    setBusy(true)
+    try {
+      await disableTOTP()
+      setEnabled(false)
+      setSetupData(null)
+      setCode('')
+      setRecoveryCodes(null)
+      toast.success('2FA отключена')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Section
+      title="Двухфакторная аутентификация"
+      description="Дополнительная защита входа через TOTP-приложение"
+      icon={<ShieldCheck size={16} />}
+    >
+      {loading ? (
+        <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          Загрузка...
+        </div>
+      ) : enabled ? (
+        <div className="space-y-3">
+          <div>
+            <span
+              className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded"
+              style={{ color: 'var(--success)', background: 'rgba(34, 197, 94, 0.1)' }}
+            >
+              <ShieldCheck size={12} />
+              Включена
+            </span>
+          </div>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            2FA защищает вход. Для отключения потребуется подтверждение.
+          </p>
+          <Button variant="ghost" size="sm" onClick={handleDisable} disabled={busy}>
+            <ShieldOff size={14} />
+            Отключить 2FA
+          </Button>
+        </div>
+      ) : setupData ? (
+        <div className="space-y-4 max-w-md">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Отсканируйте QR в приложении-аутентификаторе (Google Authenticator, Aegis,
+            1Password) или введите секрет вручную.
+          </p>
+
+          <div className="flex justify-center">
+            <img
+              src={`${getBasePath()}/2fa/qr?url=${encodeURIComponent(setupData.otpauth_url)}`}
+              alt="QR-код"
+              className="bg-white p-2 rounded-lg"
+              width={200}
+              height={200}
+            />
+          </div>
+
+          <label className="block">
+            <span className="text-sm text-neutral-400 block mb-1">
+              Секрет (если QR не считывается)
+            </span>
+            <div className="flex gap-2">
+              <input
+                value={setupData.secret}
+                readOnly
+                className="input font-mono text-xs flex-1"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(setupData.secret)
+                  toast.success('Секрет скопирован')
+                }}
+              >
+                <Copy size={14} />
+              </Button>
+            </div>
+          </label>
+
+          <label className="block">
+            <span className="text-sm text-neutral-400 block mb-1">Код из приложения</span>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="6 цифр"
+              className="input font-mono"
+            />
+          </label>
+
+          {error && <div className="text-sm text-red-400">{error}</div>}
+
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSetupData(null)
+                setCode('')
+                setError('')
+              }}
+            >
+              Отмена
+            </Button>
+            <Button onClick={handleEnable} disabled={busy}>
+              {busy ? 'Проверка...' : 'Включить 2FA'}
+            </Button>
+          </div>
+        </div>
+      ) : recoveryCodes ? (
+        <div className="space-y-3 max-w-md">
+          <p className="text-sm" style={{ color: 'var(--warning)' }}>
+            Сохраните коды восстановления. Они показываются <b>один раз</b>. Каждый код
+            одноразовый.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {recoveryCodes.map((c) => (
+              <code
+                key={c}
+                className="text-xs font-mono p-2 rounded"
+                style={{ background: '#0a0a0a', border: '1px solid var(--border)' }}
+              >
+                {c}
+              </code>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(recoveryCodes.join('\n'))
+                toast.success('Коды скопированы')
+              }}
+            >
+              <Copy size={14} />
+              Копировать все
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setRecoveryCodes(null)}>
+              Готово
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            2FA не включена. Рекомендуется включить для защиты панели.
+          </p>
+          {error && <div className="text-sm text-red-400">{error}</div>}
+          <Button onClick={handleSetup} disabled={busy}>
+            {busy ? 'Подготовка...' : 'Включить 2FA'}
+          </Button>
+        </div>
+      )}
+
+      {dialog}
     </Section>
   )
 }

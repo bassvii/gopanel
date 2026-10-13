@@ -44,11 +44,6 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   })
 
-  if (res.status === 401) {
-    // Сессия истекла — редирект на логин.
-    throw new ApiError(401, 'unauthorized')
-  }
-
   const text = await res.text()
   let data: unknown = null
   if (text) {
