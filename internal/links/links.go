@@ -41,6 +41,8 @@ func Generate(in Input) (string, error) {
 		return generateTrojan(in)
 	case "shadowsocks":
 		return generateShadowsocks(in)
+	case "hysteria":
+		return generateHysteria2(in)
 	default:
 		return "", fmt.Errorf("unsupported protocol: %s", in.Protocol)
 	}
