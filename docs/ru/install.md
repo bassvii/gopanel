@@ -65,3 +65,34 @@
     rm /usr/local/bin/gopanel
     rm -rf /var/lib/gopanel /etc/gopanel
     userdel gopanel
+
+## Firewall
+
+**Hysteria2 использует UDP.** Если на сервере включён firewall, откройте UDP-порт инбаунда:
+
+### ufw
+
+    sudo ufw allow 443/udp
+    sudo ufw allow 8443/udp
+    sudo ufw reload
+
+### firewalld
+
+    sudo firewall-cmd --permanent --add-port=443/udp
+    sudo firewall-cmd --reload
+
+### iptables (ручной)
+
+    sudo iptables -A INPUT -p udp --dport 443 -j ACCEPT
+    sudo iptables -A INPUT -p udp --dport 8443 -j ACCEPT
+    sudo netfilter-persistent save
+
+### Docker
+
+В `docker-compose.yml` UDP-порты указывайте **с суффиксом `/udp`**:
+
+    ports:
+      - "443:443/udp"
+      - "8443:8443/udp"
+
+Без `/udp` Docker пробросит только TCP, и Hysteria2 не будет работать.

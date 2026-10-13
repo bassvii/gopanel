@@ -18,6 +18,7 @@ SYSTEMD_UNIT="/etc/systemd/system/gopanel.service"
 
 GOPANEL_REPO="${GOPANEL_REPO:-https://github.com/bassvii/gopanel}"
 XRAY_REPO="https://github.com/XTLS/Xray-core"
+GEO_DIR="/usr/local/share/xray"
 
 # --- Цвета ---
 
@@ -72,38 +73,57 @@ install_deps() {
 install_xray() {
     if [[ -x "$XRAY_BIN" ]]; then
         log "Xray уже установлен: $($XRAY_BIN version | head -1)"
-        return
+    else
+        log "устанавливаю Xray-core"
+
+        local tmp
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' RETURN
+
+        local url="${XRAY_REPO}/releases/latest/download/Xray-linux-64.zip"
+        if [[ "$ARCH" == "arm64" ]]; then
+            url="${XRAY_REPO}/releases/latest/download/Xray-linux-arm64-v8a.zip"
+        fi
+
+        curl -fsSL -o "$tmp/xray.zip" "$url"
+        unzip -q -o "$tmp/xray.zip" -d "$tmp/xray"
+
+        install -m 0755 "$tmp/xray/xray" "$XRAY_BIN"
+
+        # Даём Xray право занимать порты < 1024 (443 и т.п.).
+        setcap 'cap_net_bind_service=+ep' "$XRAY_BIN" 2>/dev/null || \
+            warn "setcap не сработал: Xray не сможет занять порты < 1024"
+
+        log "Xray установлен: $($XRAY_BIN version | head -1)"
     fi
 
-    log "устанавливаю Xray-core"
-
-    local tmp
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' RETURN
-
-    local url="${XRAY_REPO}/releases/latest/download/Xray-linux-64.zip"
-    if [[ "$ARCH" == "arm64" ]]; then
-        url="${XRAY_REPO}/releases/latest/download/Xray-linux-arm64-v8a.zip"
+    # Проверка, что бинарник Xray отвечает.
+    if "$XRAY_BIN" version >/dev/null 2>&1; then
+        log "Xray поддерживает Hysteria2 (QUIC включён в официальных сборках)"
+    else
+        warn "Xray не отвечает на version — проверьте установку"
     fi
 
-    curl -fsSL -o "$tmp/xray.zip" "$url"
-    unzip -q -o "$tmp/xray.zip" -d "$tmp/xray"
-
-    install -m 0755 "$tmp/xray/xray" "$XRAY_BIN"
-
-    # Даём Xray право занимать порты < 1024 (443 и т.п.).
-    setcap 'cap_net_bind_service=+ep' "$XRAY_BIN" 2>/dev/null || \
-        warn "setcap не сработал: Xray не сможет занять порты < 1024"
-
-    log "Xray установлен: $($XRAY_BIN version | head -1)"
+    # Скачиваем GeoIP/GeoSite.
     log "скачиваю GeoIP/GeoSite"
-    mkdir -p /usr/local/share/xray
-    curl -fsSL -o /usr/local/share/xray/geosite.dat \
+    mkdir -p "$GEO_DIR"
+    curl -fsSL -o "$GEO_DIR/geosite.dat" \
         "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || \
         warn "не удалось скачать geosite.dat"
-    curl -fsSL -o /usr/local/share/xray/geoip.dat \
+    curl -fsSL -o "$GEO_DIR/geoip.dat" \
         "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || \
         warn "не удалось скачать geoip.dat"
+}
+
+# --- Firewall ---
+
+open_udp_for_hysteria() {
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        log "открываю UDP-порты для Hysteria2 в ufw"
+        ufw allow 443/udp >/dev/null 2>&1 || true
+        ufw allow 8443/udp >/dev/null 2>&1 || true
+        ufw reload >/dev/null 2>&1 || true
+    fi
 }
 
 # --- Пользователь ---
@@ -124,12 +144,12 @@ install_gopanel_bin() {
     log "устанавливаю бинарник панели"
 
     local src=""
-    if [[ -x "./gopanel" ]]; then
-        src="./gopanel"
-    elif [[ -x "./bin/gopanel" ]]; then
+    if [[ -x "./bin/gopanel" ]]; then
         src="./bin/gopanel"
+    elif [[ -x "./gopanel" ]]; then
+        src="./gopanel"
     else
-        die "бинарник gopanel не найден в текущем каталоге. Соберите: go build -o bin/gopanel ./cmd/gopanel"
+        die "бинарник gopanel не найден. Соберите: make build"
     fi
 
     install -m 0755 "$src" "$GOPANEL_BIN"
@@ -248,6 +268,11 @@ ${GREEN}Установка завершена.${NC}
       systemctl stop gopanel
       journalctl -u gopanel -f
 
+  UDP-порты для Hysteria2 (если используете firewall):
+
+      sudo ufw allow 443/udp
+      sudo ufw allow 8443/udp
+
 EOF
 }
 
@@ -259,6 +284,7 @@ main() {
     check_arch
     install_deps
     install_xray
+    open_udp_for_hysteria
     create_user
     install_gopanel_bin
     setup_dirs

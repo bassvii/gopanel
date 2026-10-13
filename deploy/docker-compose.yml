@@ -9,6 +9,11 @@ services:
     ports:
       # Проброс только на localhost хоста.
       - "127.0.0.1:44559:44559"
+      # Для Hysteria2 (UDP):
+      # - "443:443/udp"
+      # - "8443:8443/udp"
+      # Для других инбаундов (TCP):
+      # - "443:443/tcp"
     environment:
       - GOPANEL_LISTEN=0.0.0.0
       - GOPANEL_ALLOW_NON_LOOPBACK=1
