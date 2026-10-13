@@ -44,6 +44,10 @@ RUN mkdir -p /var/lib/gopanel && \
 
 USER gopanel
 
+# Порт по умолчанию (44559) — только для справки.
+# Реальный проброс портов делается через `-p` в docker run / compose.
+# Listen-адрес и порт задаются переменными окружения GOPANEL_LISTEN
+# и GOPANEL_PORT, которые образ не выставляет (см. пункт 10 аудита).
 EXPOSE 44559
 
 VOLUME ["/var/lib/gopanel"]
@@ -52,5 +56,3 @@ ENV GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db
 
 ENTRYPOINT ["/usr/local/bin/gopanel"]
 CMD ["run"]
-
-ENV GOPANEL_LISTEN=0.0.0.0

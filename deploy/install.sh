@@ -143,16 +143,14 @@ create_user() {
 install_gopanel_bin() {
     log "устанавливаю бинарник панели"
 
-    local src=""
-    if [[ -x "./bin/gopanel" ]]; then
-        src="./bin/gopanel"
-    elif [[ -x "./gopanel" ]]; then
-        src="./gopanel"
-    else
-        die "бинарник gopanel не найден. Соберите: make build"
+    # Берём только свежесобранный bin/gopanel. Файл ./gopanel в корне
+    # репозитория больше не используется: раньше он лежал в git и мог
+    # не совпадать с текущими исходниками (пункт 5 аудита).
+    if [[ ! -x "./bin/gopanel" ]]; then
+        die "бинарник ./bin/gopanel не найден. Соберите: make build"
     fi
 
-    install -m 0755 "$src" "$GOPANEL_BIN"
+    install -m 0755 "./bin/gopanel" "$GOPANEL_BIN"
 }
 
 # --- Каталоги и база ---
