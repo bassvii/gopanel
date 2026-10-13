@@ -35,3 +35,23 @@ export async function generateVlessEnc(): Promise<VlessEncResult> {
     withCSRF: true,
   })
 }
+
+export interface TLSCertRequest {
+  domain: string
+  name?: string
+  expire_hours?: number
+}
+
+export interface TLSCertResult {
+  cert_path: string
+  key_path: string
+  domain: string
+}
+
+export async function generateTLSCert(req: TLSCertRequest): Promise<TLSCertResult> {
+  return request<TLSCertResult>('/xray/tls-cert', {
+    method: 'POST',
+    body: req,
+    withCSRF: true,
+  })
+}
