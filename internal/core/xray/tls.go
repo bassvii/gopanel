@@ -21,7 +21,7 @@ type TLSCertResult struct {
 // GenerateTLSCert создаёт самоподписанный сертификат через `xray tls cert`.
 // dir — каталог для файлов, name — базовое имя (без расширения).
 // domain — CN сертификата. expireHours — срок в часах.
-func (c *Core) GenerateTLSCert(ctx context.Context, dir, name, domain string, expireHours int) (TLSCertResult, error) {
+func (c *Core) GenerateTLSCert(dir, name, domain string, expireHours int) (TLSCertResult, error) {
 	if dir == "" {
 		dir = "./certs"
 	}

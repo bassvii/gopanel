@@ -163,7 +163,7 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 		name = "cert"
 	}
 
-	res, err := s.core.GenerateTLSCert(r.Context(), dir, name, req.Domain, req.ExpireHours)
+	res, err := s.core.GenerateTLSCert(dir, name, req.Domain, req.ExpireHours)
 	if err != nil {
 		s.log.Error("tls cert generation failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
