@@ -20,7 +20,7 @@ import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
 import { Plus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { Button, Badge, Toggle, Select } from '../components/ui'
-import { generateX25519, generateShortID, generateVlessEnc } from '../api/xray'
+import { generateX25519, generateShortID, generateVlessEnc, generateTLSCert } from '../api/xray'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -358,6 +358,13 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
     inbound?.vless_enc_client ?? ''
   )
 
+  // Hysteria2
+  const [hysteriaAuth, setHysteriaAuth] = useState('')
+  const [hysteriaEmail, setHysteriaEmail] = useState('')
+  const [hysteriaDomain, setHysteriaDomain] = useState('')
+  const [hysteriaCertPath, setHysteriaCertPath] = useState('')
+  const [hysteriaKeyPath, setHysteriaKeyPath] = useState('')
+
   async function handleGenerateVlessEnc() {
     setGenerating(true)
     setError('')
@@ -368,6 +375,26 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       toast.success('VLESS Encryption сгенерирован')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ошибка генерации')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function handleGenerateCert() {
+    setGenerating(true)
+    setError('')
+    try {
+      const domain = hysteriaDomain || 'vpn.example.com'
+      const res = await generateTLSCert({
+        domain,
+        name: `hysteria-${tag || 'inbound'}`,
+        expire_hours: 8760,
+      })
+      setHysteriaCertPath(res.cert_path)
+      setHysteriaKeyPath(res.key_path)
+      toast.success('Сертификат создан')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка генерации сертификата')
     } finally {
       setGenerating(false)
     }
@@ -430,6 +457,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       realityFlow: stream.realityFlow === '_none' ? '' : stream.realityFlow,
     }
 
+    // VLESS Encryption.
     let finalSettings = settings
     if (protocol === 'vless' && vlessEncServer) {
       try {
@@ -437,8 +465,36 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
         parsed.decryption = vlessEncServer
         finalSettings = JSON.stringify(parsed, null, 2)
       } catch {
-        // Игнорируем — settings невалидный JSON.
+        // Игнорируем.
       }
+    }
+
+    // Hysteria2 — settings и stream собираются заново.
+    let finalStream = streamForSubmit
+    if (protocol === 'hysteria') {
+      // Settings: version + users.
+      finalSettings = JSON.stringify(
+        {
+          version: 2,
+          users: hysteriaAuth
+            ? [{ auth: hysteriaAuth, email: hysteriaEmail || `${tag}@gopanel` }]
+            : [],
+        },
+        null,
+        2,
+      )
+
+      // Stream: TLS + сертификат + hysteria.
+      finalStream = {
+        ...streamForSubmit,
+        network: 'hysteria',
+        security: 'tls',
+        tlsServerName: '',    // не используется в Hysteria2
+        tlsAlpn: 'h3',        // ALPN h3 обязателен
+        tlsFingerprint: '',
+        tlsCertPath: hysteriaCertPath,
+        tlsKeyPath: hysteriaKeyPath,
+      } as typeof streamForSubmit
     }
 
     const input: InboundInput = {
@@ -447,7 +503,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
       port: Number(port),
       listen,
       settings_json: finalSettings,
-      stream_json: buildStreamJSON(streamForSubmit),
+      stream_json: buildStreamJSON(finalStream),
       sniffing_json: sniffing,
       reality_public_key: realityPublicKey,
       vless_enc_client: vlessEncClient,
@@ -499,6 +555,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                 { value: 'vmess', label: 'VMess' },
                 { value: 'trojan', label: 'Trojan' },
                 { value: 'shadowsocks', label: 'Shadowsocks' },
+                { value: 'hysteria', label: 'Hysteria2' },
                 { value: 'socks', label: 'SOCKS' },
                 { value: 'http', label: 'HTTP' },
               ]}
@@ -833,6 +890,67 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
             </div>
           )}
         </Section>
+
+        {/* Hysteria2 */}
+        {protocol === 'hysteria' && (
+          <Section title="Hysteria2">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Auth (пароль)">
+                <input
+                  value={hysteriaAuth}
+                  onChange={(e) => setHysteriaAuth(e.target.value)}
+                  placeholder="пароль для клиента"
+                  className={inputClass + ' font-mono text-xs'}
+                />
+              </Field>
+              <Field label="Email (для статистики)">
+                <input
+                  value={hysteriaEmail}
+                  onChange={(e) => setHysteriaEmail(e.target.value)}
+                  placeholder="user@gopanel"
+                  className={inputClass + ' font-mono text-xs'}
+                />
+              </Field>
+            </div>
+
+            <Field label="Домен (CN сертификата)">
+              <input
+                value={hysteriaDomain}
+                onChange={(e) => setHysteriaDomain(e.target.value)}
+                placeholder="vpn.example.com"
+                className={inputClass}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Certificate (.crt)">
+                <input
+                  value={hysteriaCertPath}
+                  onChange={(e) => setHysteriaCertPath(e.target.value)}
+                  placeholder="нажмите «Сгенерировать»"
+                  className={inputClass + ' font-mono text-xs'}
+                />
+              </Field>
+              <Field label="Private Key (.key)">
+                <input
+                  value={hysteriaKeyPath}
+                  onChange={(e) => setHysteriaKeyPath(e.target.value)}
+                  placeholder="нажмите «Сгенерировать»"
+                  className={inputClass + ' font-mono text-xs'}
+                />
+              </Field>
+            </div>
+
+            <Button
+              type="button"
+              onClick={handleGenerateCert}
+              disabled={generating}
+              size="sm"
+            >
+              {generating ? 'Генерация...' : 'Сгенерировать сертификат'}
+            </Button>
+          </Section>
+        )}
 
         {/* VLESS Encryption */}
         {protocol === 'vless' && stream.security === 'none' && (

@@ -1,6 +1,6 @@
 // StreamSettings — удобное представление stream_json.
 export interface StreamSettings {
-  network: 'tcp' | 'ws' | 'grpc' | 'xhttp'
+  network: 'tcp' | 'ws' | 'grpc' | 'xhttp' | 'hysteria'
   security: 'none' | 'tls' | 'reality'
 
   // TCP
@@ -37,6 +37,10 @@ export interface StreamSettings {
   realityFingerprint: string
   realityFlow: string // xtls-rprx-vision или пусто
   realitySpiderX: string
+
+  // TLS certificate (для Hysteria2, TLS-инбаундов).
+  tlsCertPath: string
+  tlsKeyPath: string
 }
 
 export const defaultStreamSettings: StreamSettings = {
@@ -65,6 +69,8 @@ export const defaultStreamSettings: StreamSettings = {
   realityFingerprint: 'chrome',
   realityFlow: '',
   realitySpiderX: '/',
+  tlsCertPath: '',
+  tlsKeyPath: '',
 }
 
 // parseStreamJSON разбирает JSON-строку в структуру.
@@ -146,6 +152,14 @@ export function parseStreamJSON(json: string): StreamSettings {
     if (Array.isArray(tls?.alpn)) {
       out.tlsAlpn = (tls.alpn as unknown[]).filter((x) => typeof x === 'string').join(',')
     }
+    // Сертификаты.
+    if (Array.isArray(tls?.certificates)) {
+      const cert = (tls.certificates as unknown[])[0] as Record<string, unknown> | undefined
+      if (cert && typeof cert.certificateFile === 'string') {
+        out.tlsCertPath = cert.certificateFile
+        out.tlsKeyPath = typeof cert.keyFile === 'string' ? cert.keyFile : ''
+      }
+    }
   }
 
   // REALITY
@@ -166,6 +180,10 @@ export function parseStreamJSON(json: string): StreamSettings {
         .filter((x) => typeof x === 'string')
         .join(',')
     }
+  }
+
+  if (out.network === 'hysteria') {
+    // version всегда 2, отдельно не храним
   }
 
   return out
@@ -218,17 +236,31 @@ export function buildStreamJSON(s: StreamSettings): string {
         out.xhttpSettings = xhttp
         break
       }
+      case 'hysteria':
+        out.hysteriaSettings = {
+          version: 2,
+        }
+        break
     }
   // Безопасность.
   if (s.security === 'tls') {
     const tls: Record<string, unknown> = {}
     if (s.tlsServerName) tls.serverName = s.tlsServerName
     if (s.tlsFingerprint) tls.fingerprint = s.tlsFingerprint
+
     const alpn = s.tlsAlpn
       .split(',')
       .map((x) => x.trim())
       .filter(Boolean)
     if (alpn.length > 0) tls.alpn = alpn
+
+    // Сертификаты.
+    if (s.tlsCertPath && s.tlsKeyPath) {
+      tls.certificates = [
+        { certificateFile: s.tlsCertPath, keyFile: s.tlsKeyPath },
+      ]
+    }
+
     out.tlsSettings = tls
   }
 
