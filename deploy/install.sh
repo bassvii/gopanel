@@ -73,6 +73,8 @@ install_deps() {
 install_xray() {
     if [[ -x "$XRAY_BIN" ]]; then
         log "Xray уже установлен: $($XRAY_BIN version | head -1)"
+        # Снимаем возможный старый setcap, если он остался от прошлых версий.
+        setcap -r "$XRAY_BIN" 2>/dev/null || true
     else
         log "устанавливаю Xray-core"
 
@@ -90,9 +92,11 @@ install_xray() {
 
         install -m 0755 "$tmp/xray/xray" "$XRAY_BIN"
 
-        # Даём Xray право занимать порты < 1024 (443 и т.п.).
-        setcap 'cap_net_bind_service=+ep' "$XRAY_BIN" 2>/dev/null || \
-            warn "setcap не сработал: Xray не сможет занять порты < 1024"
+        # setcap здесь НЕ нужен. Xray запускается панелью, а панель
+        # работает под systemd-юнитом с AmbientCapabilities=CAP_NET_BIND_SERVICE
+        # (см. install_systemd). Capability наследуется дочерним процессом Xray.
+        # При NoNewPrivileges=true старый setcap всё равно не сработал бы
+        # (см. пункт 4 аудита).
 
         log "Xray установлен: $($XRAY_BIN version | head -1)"
     fi
@@ -189,8 +193,17 @@ ExecStart=$GOPANEL_BIN run --db $GOPANEL_DB
 Restart=on-failure
 RestartSec=5
 
-# Безопасность
-NoNewPrivileges=true
+# Безопасность.
+#
+# NoNewPrivileges=false нужен, чтобы дочерний процесс Xray унаследовал
+# CAP_NET_BIND_SERVICE через AmbientCapabilities. Иначе Xray не сможет
+# занять порты < 1024 (443 и т.п.). См. пункт 4 аудита.
+# Альтернатива setcap на бинарник Xray тут не работает: NoNewPrivileges=true
+# запрещает дочерним процессам получать новые привилегии через file caps.
+NoNewPrivileges=false
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
@@ -274,6 +287,20 @@ ${GREEN}Установка завершена.${NC}
 
       sudo ufw allow 443/udp
       sudo ufw allow 8443/udp
+
+  Если Xray не может занять порт 443 (bind: permission denied):
+
+      journalctl -u gopanel -n 50
+
+  Проверьте, что unit содержит AmbientCapabilities=CAP_NET_BIND_SERVICE
+  и NoNewPrivileges=false:
+
+      systemctl show gopanel | grep -E 'AmbientCap|NoNewPriv'
+
+  После правки unit:
+
+      sudo systemctl daemon-reload
+      sudo systemctl restart gopanel
 
 EOF
 }
