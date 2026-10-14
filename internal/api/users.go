@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,17 +70,17 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-		case http.MethodGet:
-			list, err := db.ListUsers(s.db)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			dtos := make([]userDTO, 0, len(list))
-			for _, u := range list {
-				dtos = append(dtos, toUserDTO(u))
-			}
-			writeJSON(w, http.StatusOK, map[string]any{"users": dtos})
+	case http.MethodGet:
+		list, err := db.ListUsers(s.db)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		dtos := make([]userDTO, 0, len(list))
+		for _, u := range list {
+			dtos = append(dtos, toUserDTO(u))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"users": dtos})
 
 	case http.MethodPost:
 		if !s.requireCSRF(w, r, sess) {
@@ -137,17 +138,17 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-		case http.MethodGet:
-			u, err := db.GetUser(s.db, id)
-			if errors.Is(err, db.ErrNotFound) {
-				http.NotFound(w, r)
-				return
-			}
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, http.StatusOK, toUserDTO(u))
+	case http.MethodGet:
+		u, err := db.GetUser(s.db, id)
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, toUserDTO(u))
 
 	case http.MethodPut:
 		if !s.requireCSRF(w, r, sess) {
@@ -227,15 +228,22 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cred := p.CredentialJSON
+	in, err := db.GetInbound(s.db, p.InboundID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inbound not found"})
+		return
+	}
+
 	if cred == "" {
-		in, err := db.GetInbound(s.db, p.InboundID)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inbound not found"})
-			return
-		}
 		cred, err = generateCredential(in.Protocol)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	} else {
+		// Валидация присланного credential по протоколу.
+		if err := validateCredential(in.Protocol, cred); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 	}
@@ -297,4 +305,43 @@ func randomPassword(n int) (string, error) {
 		out[i] = alphabet[int(buf[i])%len(alphabet)]
 	}
 	return string(out), nil
+}
+
+// validateCredential проверяет, что JSON-строка credential подходит
+// для данного протокола: содержит нужные поля правильного типа.
+// См. P0-4 второго аудита.
+func validateCredential(protocol, cred string) error {
+	if cred == "" {
+		return errors.New("credential is empty")
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(cred), &obj); err != nil {
+		return fmt.Errorf("credential is not a JSON object: %w", err)
+	}
+	switch protocol {
+	case "vless", "vmess":
+		id, ok := obj["id"].(string)
+		if !ok || id == "" {
+			return errors.New("credential for vless/vmess must contain non-empty \"id\" (string)")
+		}
+	case "trojan", "shadowsocks":
+		pw, ok := obj["password"].(string)
+		if !ok || pw == "" {
+			return errors.New("credential for trojan/shadowsocks must contain non-empty \"password\" (string)")
+		}
+	case "socks", "http":
+		// user/password опциональны (может быть без авторизации),
+		// но если задано — должен быть string.
+		if v, ok := obj["user"]; ok {
+			if _, isStr := v.(string); !isStr {
+				return errors.New("credential \"user\" must be a string")
+			}
+		}
+		if v, ok := obj["password"]; ok {
+			if _, isStr := v.(string); !isStr {
+				return errors.New("credential \"password\" must be a string")
+			}
+		}
+	}
+	return nil
 }

@@ -277,9 +277,15 @@ func runServe(args []string) error {
 		return fmt.Errorf("init xray core: %w", err)
 	}
 
-	configData, err := buildConfigFromDB(conn)
+	configData, err := buildConfigFromDB(conn, log)
 	if err != nil {
-		return fmt.Errorf("build config: %w", err)
+		log.Error("build config failed, starting with empty config", "err", err)
+		// Не падаем: запускаем пустой конфиг, чтобы UI работал
+		// и админ мог исправить проблему. См. P0-4.
+		emptyCfg, _ := xray.BuildConfig(xray.BuildInput{})
+		if emptyCfg != nil {
+			configData, _ = xray.MarshalConfig(emptyCfg)
+		}
 	}
 	if err := core.ApplyConfig(ctx, configData); err != nil {
 		log.Error("xray start failed", "err", err)
@@ -370,12 +376,12 @@ func reloadLoop(ctx context.Context, srv *api.Server, core *xray.Core, conn *sql
 		select {
 		case <-ctx.Done():
 			return
-		case <-srv.ReloadCh():
-			data, err := buildConfigFromDB(conn)
-			if err != nil {
-				log.Error("rebuild config failed", "err", err)
-				continue
-			}
+			case <-srv.ReloadCh():
+				data, err := buildConfigFromDB(conn, log)
+				if err != nil {
+					log.Error("rebuild config failed", "err", err)
+					continue
+				}
 			if err := core.ApplyConfig(ctx, data); err != nil {
 				log.Error("apply config failed", "err", err)
 				continue
@@ -510,7 +516,7 @@ func newLogger(level string) *slog.Logger {
 }
 
 // buildConfigFromDB собирает конфиг Xray из состояния БД.
-func buildConfigFromDB(conn *sql.DB) ([]byte, error) {
+func buildConfigFromDB(conn *sql.DB, log *slog.Logger) ([]byte, error) {
 	inbounds, err := db.ListInbounds(conn)
 	if err != nil {
 		return nil, err
@@ -518,18 +524,28 @@ func buildConfigFromDB(conn *sql.DB) ([]byte, error) {
 
 	var input xray.BuildInput
 
-	// Инбаунды.
+	// Инбаунды. Проблемную запись пропускаем с логом, но конфиг
+	// всё равно собираем: панель должна запуститься, чтобы админ
+	// мог зайти и исправить её. См. P0-4 второго аудита.
 	for _, in := range inbounds {
+		if !in.Enabled {
+			continue
+		}
+
 		links, err := db.ListUsersForInbound(conn, in.ID)
 		if err != nil {
-			return nil, err
+			log.Error("list users for inbound failed, skipping",
+				"err", err, "inbound_id", in.ID, "tag", in.Tag)
+			continue
 		}
 
 		var users []xray.UserInput
 		for _, l := range links {
 			u, err := db.GetUser(conn, l.UserID)
 			if err != nil {
-				return nil, err
+				log.Error("get user failed, skipping from inbound",
+					"err", err, "user_id", l.UserID, "inbound_id", in.ID)
+				continue
 			}
 			users = append(users, xray.UserInput{
 				UserID:         u.ID,
