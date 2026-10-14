@@ -14,10 +14,11 @@ services:
       # - "8443:8443/udp"
       # Для других инбаундов (TCP):
       # - "443:443/tcp"
-    environment:
-      - GOPANEL_LISTEN=0.0.0.0
-      - GOPANEL_ALLOW_NON_LOOPBACK=1
-      - GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db
+      environment:
+        - GOPANEL_LISTEN=0.0.0.0
+        - GOPANEL_PORT=44559
+        - GOPANEL_ALLOW_NON_LOOPBACK=1
+        - GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db
     volumes:
       - gopanel-data:/var/lib/gopanel
     # Xray внутри контейнера слушает 0.0.0.0 и порты инбаундов.
