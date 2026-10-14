@@ -43,23 +43,23 @@ type Client struct {
 
 // BuildInput — данные из БД, нужные для сборки конфига.
 type BuildInput struct {
-	Inbounds []InboundInput
+	Inbounds  []InboundInput
 	Outbounds []OutboundInput
 	Rules     []RoutingRuleInput
 }
 
 // InboundInput — инбаунд и его пользователи.
 type InboundInput struct {
-	ID             int64
-	Tag            string
-	Protocol       string
-	Port           int
-	Listen         string
-	SettingsJSON   string
-	StreamJSON     string
-	SniffingJSON   string
-	Enabled        bool
-	Users          []UserInput
+	ID           int64
+	Tag          string
+	Protocol     string
+	Port         int
+	Listen       string
+	SettingsJSON string
+	StreamJSON   string
+	SniffingJSON string
+	Enabled      bool
+	Users        []UserInput
 }
 
 // UserInput — пользователь и его учётные данные для инбаунда.
@@ -253,7 +253,6 @@ func defaultAPI() map[string]any {
 	}
 }
 
-
 // buildOutbounds формирует список outbound'ов для Xray.
 // Всегда добавляет freedom и blackhole, если их нет.
 // buildOutbounds формирует список outbound'ов для Xray.
@@ -330,17 +329,38 @@ func buildRouting(rules []RoutingRuleInput) map[string]any {
 		"outboundTag": "api",
 	})
 
-	// Жёсткая защита: приватные адреса (loopback, LAN, link-local,
-	// cloud metadata 169.254.169.254) блокируются всегда, до любых
-	// пользовательских правил. Иначе клиент через прокси может
-	// достучаться до админки панели (127.0.0.1:PORT), StatsService
-	// (127.0.0.1:10085) и внутренних сервисов.
+	// Блокируем приватные адреса и служебные домены до любых
+	// пользовательских правил.
 	//
-	// Если пользователь сознательно хочет отправить приватные
-	// адреса в DIRECT (например, для доступа к LAN через прокси),
-	// он может добавить своё правило ПОСЛЕ этого — оно не сработает,
-	// потому что первое совпадение выигрывает. Для такого сценария
-	// нужен явный opt-out (см. комментарий в routing_presets.go).
+	// ВАЖНО: правило с "ip": ["geoip:private"] НЕ сработает для
+	// доменов, если routing использует domainStrategy "AsIs" (это
+	// умолчание Xray). Домен резолвится на стороне Xray уже
+	// ПОСЛЕ матчинга правил, поэтому проверка "geoip:private"
+	// видит IP-литерал только для IP-запросов, а для доменов
+	// совпадения нет.
+	//
+	// Решение: IPOnDemand — Xray резолвит домен ДО матчинга правил.
+	// Тогда "geoip:private" ловит и DNS-ответ 127.0.0.1,
+	// 169.254.169.254, RFC1918. Остаточный риск — DNS rebinding
+	// между резолвом и dial (см. SECURITY.md).
+	//
+	// Служебные имена, которые не должны резолвиться вообще,
+	// перечисляем явно:
+	//   - localhost — loopback по определению;
+	//   - metadata.google.internal, metadata.google.com —
+	//     cloud metadata; у AWS это 169.254.169.254 (IP-литерал),
+	//     и его ловит geoip:private.
+	out = append(out, map[string]any{
+		"type": "field",
+		"domain": []string{
+			"localhost",
+			"metadata.google.internal",
+			"metadata.google.com",
+		},
+		"outboundTag": "BLOCK",
+		"ruleTag":     "Служебные домены — BLOCK (защита)",
+	})
+
 	out = append(out, map[string]any{
 		"type":        "field",
 		"ip":          []string{"geoip:private"},
@@ -390,11 +410,16 @@ func buildRouting(rules []RoutingRuleInput) map[string]any {
 		if proto, err := parseJSONArray(r.ProtocolJSON); err == nil && len(proto) > 0 {
 			rule["protocol"] = proto
 		}
-
 		out = append(out, rule)
 	}
 
-	return map[string]any{"rules": out}
+	// domainStrategy: IPOnDemand — Xray резолвит домен ДО матчинга
+	// правил, чтобы geoip:private ловил и DNS-ответы, а не только
+	// IP-литералы. См. комментарий выше.
+	return map[string]any{
+		"domainStrategy": "IPOnDemand",
+		"rules":          out,
+	}
 }
 
 // parseJSONArray разбирает JSON-строку в массив строк.
