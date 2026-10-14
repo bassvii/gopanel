@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -91,8 +92,8 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 			return
 		}
-		if strings.TrimSpace(p.Name) == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		if err := validateUserPayload(p); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -157,6 +158,10 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 		var p userPayload
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+		if err := validateUserPayload(p); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		var expires time.Time
@@ -342,6 +347,40 @@ func validateCredential(protocol, cred string) error {
 				return errors.New("credential \"password\" must be a string")
 			}
 		}
+	}
+	return nil
+}
+
+// validateUserPayload проверяет поля пользователя для POST и PUT.
+// См. P2-14 второго аудита.
+func validateUserPayload(p userPayload) error {
+	name := strings.TrimSpace(p.Name)
+	if name == "" {
+		return errors.New("name is required")
+	}
+	if len(name) > 64 {
+		return errors.New("name must be at most 64 characters")
+	}
+	email := strings.TrimSpace(p.Email)
+	if email != "" {
+		if len(email) > 254 {
+			return errors.New("email must be at most 254 characters")
+		}
+		if _, err := mail.ParseAddress(email); err != nil {
+			return fmt.Errorf("invalid email: %w", err)
+		}
+	}
+	if len(p.Note) > 1024 {
+		return errors.New("note must be at most 1024 characters")
+	}
+	if p.QuotaBytes < 0 {
+		return errors.New("quota_bytes must be non-negative")
+	}
+	if p.DeviceLimit < 0 {
+		return errors.New("device_limit must be non-negative")
+	}
+	if p.ExpiresAt < 0 {
+		return errors.New("expires_at must be non-negative")
 	}
 	return nil
 }

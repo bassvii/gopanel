@@ -6,10 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"fmt"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/db"
@@ -32,18 +32,18 @@ func adminPortFromDB(conn *sql.DB) int {
 }
 
 type inboundDTO struct {
-	ID           int64  `json:"id"`
-	Tag          string `json:"tag"`
-	Protocol     string `json:"protocol"`
-	Port         int    `json:"port"`
-	Listen       string `json:"listen"`
-	SettingsJSON string `json:"settings_json"`
-	StreamJSON   string `json:"stream_json"`
-	SniffingJSON string `json:"sniffing_json"`
+	ID               int64  `json:"id"`
+	Tag              string `json:"tag"`
+	Protocol         string `json:"protocol"`
+	Port             int    `json:"port"`
+	Listen           string `json:"listen"`
+	SettingsJSON     string `json:"settings_json"`
+	StreamJSON       string `json:"stream_json"`
+	SniffingJSON     string `json:"sniffing_json"`
 	RealityPublicKey string `json:"reality_public_key"`
 	VlessEncClient   string `json:"vless_enc_client"`
-	Enabled      bool   `json:"enabled"`
-	CreatedAt    int64  `json:"created_at"`
+	Enabled          bool   `json:"enabled"`
+	CreatedAt        int64  `json:"created_at"`
 }
 
 func toInboundDTO(in db.Inbound) inboundDTO {
@@ -52,32 +52,32 @@ func toInboundDTO(in db.Inbound) inboundDTO {
 		created = in.CreatedAt.Unix()
 	}
 	return inboundDTO{
-		ID:           in.ID,
-		Tag:          in.Tag,
-		Protocol:     in.Protocol,
-		Port:         in.Port,
-		Listen:       in.Listen,
-		SettingsJSON: in.SettingsJSON,
-		StreamJSON:   in.StreamJSON,
-		SniffingJSON: in.SniffingJSON,
+		ID:               in.ID,
+		Tag:              in.Tag,
+		Protocol:         in.Protocol,
+		Port:             in.Port,
+		Listen:           in.Listen,
+		SettingsJSON:     in.SettingsJSON,
+		StreamJSON:       in.StreamJSON,
+		SniffingJSON:     in.SniffingJSON,
 		RealityPublicKey: in.RealityPublicKey,
 		VlessEncClient:   in.VlessEncClient,
-		Enabled:      in.Enabled,
-		CreatedAt:    created,
+		Enabled:          in.Enabled,
+		CreatedAt:        created,
 	}
 }
 
 type inboundPayload struct {
-	Tag          string `json:"tag"`
-	Protocol     string `json:"protocol"`
-	Port         int    `json:"port"`
-	Listen       string `json:"listen"`
-	SettingsJSON string `json:"settings_json"`
-	StreamJSON   string `json:"stream_json"`
-	SniffingJSON string `json:"sniffing_json"`
+	Tag              string `json:"tag"`
+	Protocol         string `json:"protocol"`
+	Port             int    `json:"port"`
+	Listen           string `json:"listen"`
+	SettingsJSON     string `json:"settings_json"`
+	StreamJSON       string `json:"stream_json"`
+	SniffingJSON     string `json:"sniffing_json"`
 	RealityPublicKey string `json:"reality_public_key"`
 	VlessEncClient   string `json:"vless_enc_client"`
-	Enabled      bool   `json:"enabled"`
+	Enabled          bool   `json:"enabled"`
 }
 
 // handleInbounds — GET /inbounds (список), POST /inbounds (создать).
@@ -88,17 +88,17 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-		case http.MethodGet:
-			list, err := db.ListInbounds(s.db)
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			dtos := make([]inboundDTO, 0, len(list))
-			for _, in := range list {
-				dtos = append(dtos, toInboundDTO(in))
-			}
-			writeJSON(w, http.StatusOK, map[string]any{"inbounds": dtos})
+	case http.MethodGet:
+		list, err := db.ListInbounds(s.db)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		dtos := make([]inboundDTO, 0, len(list))
+		for _, in := range list {
+			dtos = append(dtos, toInboundDTO(in))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"inbounds": dtos})
 
 	case http.MethodPost:
 		if !s.requireCSRF(w, r, sess) {
@@ -114,6 +114,9 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 			s.log.Error("list inbounds for validation failed", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		if p.Listen == "" {
+			p.Listen = "0.0.0.0"
 		}
 		if err := validateInbound(p, adminPortFromDB(s.db), existing, 0); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -155,17 +158,17 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-		case http.MethodGet:
-			in, err := db.GetInbound(s.db, id)
-			if errors.Is(err, db.ErrNotFound) {
-				http.NotFound(w, r)
-				return
-			}
-			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, http.StatusOK, toInboundDTO(in))
+	case http.MethodGet:
+		in, err := db.GetInbound(s.db, id)
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, toInboundDTO(in))
 
 	case http.MethodPut:
 		if !s.requireCSRF(w, r, sess) {
@@ -181,6 +184,9 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 			s.log.Error("list inbounds for validation failed", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		if p.Listen == "" {
+			p.Listen = "0.0.0.0"
 		}
 		if err := validateInbound(p, adminPortFromDB(s.db), existing, id); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -229,9 +235,6 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 	}
 	if p.Port < 1 || p.Port > 65535 {
 		return errors.New("port must be 1..65535")
-	}
-	if p.Listen == "" {
-		p.Listen = "0.0.0.0"
 	}
 
 	// Запрет на порт админки и StatsService.
