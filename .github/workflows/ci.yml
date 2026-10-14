@@ -104,9 +104,11 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Prepare test DB
+        env:
+          GOPANEL_ADMIN_PASSWORD: "verylongpassword123"
         run: |
           rm -f /tmp/gp.db
-          ./bin/gopanel admin create --db /tmp/gp.db --user admin --password "verylongpassword123"
+          ./bin/gopanel admin create --db /tmp/gp.db --user admin
 
       - name: Start panel
         id: panel
