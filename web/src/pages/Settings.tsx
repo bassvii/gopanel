@@ -11,7 +11,7 @@ import {
   disableTOTP,
   type TOTPSetupResponse,
 } from '../api/me'
-import { downloadBackup } from '../api/backup'
+import { downloadBackup, saveBlob, defaultBackupName } from '../api/backup'
 import { ApiError } from '../api/client'
 import { toast } from 'sonner'
 import { Button, Input } from '../components/ui'
@@ -262,12 +262,31 @@ function SessionsSection() {
 
 // --- Бэкап ---
 
+// --- Бэкап ---
+
 function BackupSection() {
-  async function handleBackup() {
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleBackup(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (!password) {
+      setError('Введите пароль')
+      return
+    }
+    setBusy(true)
     try {
-      await downloadBackup()
+      const blob = await downloadBackup(password)
+      saveBlob(blob, defaultBackupName())
+      toast.success('Бэкап скачан')
+      setPassword('')
     } catch (err) {
-      toast.error('Ошибка загрузки бэкапа')
+      const msg = err instanceof Error ? err.message : 'Ошибка'
+      setError(msg === 'invalid password' ? 'Неверный пароль' : msg)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -277,12 +296,24 @@ function BackupSection() {
       description="Скачать дамп базы данных"
       icon={<Shield size={16} />}
     >
-      <div className="space-y-3">
+      <div className="space-y-3 max-w-md">
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Дамп содержит пользователей, инбаунды, настройки и журнал аудита.
-          Трафик не сохраняется.
+          Дамп содержит пользователей, инбаунды, настройки, TOTP-секреты
+          (зашифрованные) и журнал аудита. Для скачивания требуется пароль.
         </p>
-        <Button onClick={handleBackup}>Скачать бэкап</Button>
+        <form onSubmit={handleBackup} className="space-y-3">
+          <Input
+            type="password"
+            placeholder="Пароль администратора"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            error={error}
+          />
+          <Button type="submit" disabled={busy}>
+            {busy ? 'Готовлю бэкап...' : 'Скачать бэкап'}
+          </Button>
+        </form>
       </div>
     </Section>
   )

@@ -1,26 +1,46 @@
 import { getBasePath } from '../lib/basePath'
-import { toast } from 'sonner'
+import { getCSRF } from './client'
 
-export function downloadBackup() {
+export async function downloadBackup(password: string): Promise<Blob> {
   const base = getBasePath()
   const url = `${base}/backup/download`
 
-  fetch(url, {
+  const res = await fetch(url, {
+    method: 'POST',
     credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCSRF(),
+    },
+    body: JSON.stringify({ password }),
   })
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return res.blob()
-    })
-    .then((blob) => {
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      link.download = `gopanel-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.db`
-      link.click()
-      URL.revokeObjectURL(link.href)
-      toast.success('Бэкап скачан')
-    })
-    .catch((err) => {
-      toast.error('Ошибка загрузки бэкапа: ' + err.message)
-    })
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const data = await res.json()
+      if (data && typeof data.error === 'string') {
+        message = data.error
+      }
+    } catch {
+      /* не JSON — оставим HTTP-код */
+    }
+    throw new Error(message)
+  }
+
+  return res.blob()
+}
+
+export function saveBlob(blob: Blob, filename: string) {
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+export function defaultBackupName(): string {
+  const now = new Date()
+  const stamp = now.toISOString().slice(0, 19).replace(/[:T]/g, '-')
+  return `gopanel-${stamp}.db`
 }

@@ -3,17 +3,58 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/bassvii/gopanel/internal/audit"
+	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/backup"
 	"github.com/bassvii/gopanel/internal/notify"
 )
 
-// handleBackupDownload — GET /backup/download
+type backupRequest struct {
+	Password string `json:"password"`
+}
+
+// handleBackupDownload — POST /backup/download
+//
+// Требует пароль администратора в теле запроса. Бэкап содержит
+// хеши паролей, TOTP-секреты (зашифрованные), recovery-коды —
+// украденная сессия не должна давать доступ ко всему этому без
+// знания пароля (см. P0-2 аудита).
 func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	sess, ok := s.requireSession(w, r)
 	if !ok {
+		return
+	}
+	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+
+	var req backupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password required"})
+		return
+	}
+
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
+	if err != nil {
+		s.log.Error("get admin failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
+		_ = audit.Log(s.db, sess.AdminID, "backup_download_failed", "", clientIP(r))
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
 		return
 	}
 
