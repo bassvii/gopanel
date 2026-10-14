@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -39,6 +40,43 @@ func GenerateTOTPSecret(username string) (string, string, error) {
 		return "", "", fmt.Errorf("generate totp: %w", err)
 	}
 	return key.Secret(), key.URL(), nil
+}
+
+// BuildOTPAuthURL собирает otpauth:// URL по существующему секрету.
+// Нужно для QR: секрет не передаётся в query, а читается из БД
+// и превращается в URL на сервере. См. P3-5 третьего аудита.
+func BuildOTPAuthURL(username, secret string) (string, error) {
+	// pquerna/otp умеет генерировать URL из готового секрета через
+	// NewKeyFromURL — но проще собрать вручную через GenerateOpts
+	// с фиксированным секретом. Используем sameOpts.
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      Issuer,
+		AccountName: username,
+		Period:      30,
+		Secret:      []byte(secret), // уже base32-строка → передаём как байты
+		SecretSize:  20,
+		Digits:      otp.DigitsSix,
+		Algorithm:   otp.AlgorithmSHA1,
+	})
+	if err != nil {
+		// pquerna/otp не всегда принимает base32-строку как Secret.
+		// Fallback — собрать URL вручную.
+		return buildOTPAuthURLManual(username, secret), nil
+	}
+	return key.URL(), nil
+}
+
+// buildOTPAuthURLManual собирает otpauth URL вручную, если
+// pquerna/otp не принимает существующий секрет.
+func buildOTPAuthURLManual(username, secret string) string {
+	label := url.PathEscape(Issuer + ":" + username)
+	params := url.Values{}
+	params.Set("secret", secret)
+	params.Set("issuer", Issuer)
+	params.Set("algorithm", "SHA1")
+	params.Set("digits", "6")
+	params.Set("period", "30")
+	return "otpauth://totp/" + label + "?" + params.Encode()
 }
 
 // VerifyTOTP проверяет шестизначный код против секрета.
@@ -312,6 +350,30 @@ func ConsumeRecoveryCode(conn *sql.DB, adminID int64, code string) error {
 		return errors.New("invalid or used recovery code")
 	}
 	return nil
+}
+
+// RecoveryCodeExists проверяет, что код восстановления существует
+// и не был использован, БЕЗ его потребления. Нужен для обхода
+// admin-lockout: на этом этапе пароль ещё не проверен, и тратить
+// код нельзя. Потребление — через ConsumeRecoveryCode ниже, после
+// успешной проверки пароля. См. P3-1 третьего аудита.
+func RecoveryCodeExists(conn *sql.DB, adminID int64, code string) bool {
+	code = strings.TrimSpace(strings.ToUpper(code))
+	if code == "" {
+		return false
+	}
+	hash := recoveryCodeHash(code)
+
+	var n int
+	err := conn.QueryRow(
+		`SELECT COUNT(*) FROM recovery_codes
+		 WHERE admin_id = ? AND code_hash = ? AND used_at = 0`,
+		adminID, hash,
+	).Scan(&n)
+	if err != nil {
+		return false
+	}
+	return n > 0
 }
 
 func randomRecoveryCode() (string, error) {

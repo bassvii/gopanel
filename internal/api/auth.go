@@ -80,17 +80,31 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if adminLocked {
-		// Исключение для владельца: если админ уже прислал валидный
-		// TOTP-код, lockout по аккаунту обходится. Это защищает от DoS
-		// (P1-9 аудита): атакующий не может надолго заблокировать
-		// владельца, зная только его логин. Брутфорсер без TOTP
-		// по-прежнему застревает — сам факт наличия кода не помогает,
-		// он должен быть валидным.
-		// bypass — только грубая проверка «код валиден» без
-		// consume. Если пропустим — основной TOTP-блок ниже
-		// вызовет VerifyAndConsumeTOTP, который и защитит от replay.
-		bypass := admin.TOTPSecret != "" && req.TOTPCode != "" &&
-			auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode)
+		// Исключение для владельца: если админ прислал валидный
+		// TOTP-код ИЛИ неиспользованный recovery-код, lockout по
+		// аккаунту обходится. Это защита от DoS (P1-9 первого
+		// аудита): атакующий не может надолго заблокировать
+		// владельца, зная только его логин.
+		//
+		// P3-1 третьего аудита: recovery-код тоже даёт обход.
+		// Без этого владелец, потерявший телефон, оказывается
+		// заблокирован, пока атака не прекратится.
+		//
+		// ВАЖНО: обход — это только «грубая» проверка валидности
+		// без потребления. Настоящее потребление (ConsumeRecoveryCode
+		// и VerifyAndConsumeTOTP) произойдёт ниже, в основном блоке,
+		// ПОСЛЕ проверки пароля. Иначе перебор recovery-кодов при
+		// lockout сжёг бы все коды.
+		bypass := false
+		if admin.TOTPSecret != "" && req.TOTPCode != "" {
+			// TOTP-код.
+			if auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode) {
+				bypass = true
+			} else if auth.RecoveryCodeExists(s.db, admin.ID, req.TOTPCode) {
+				// Recovery-код — не потребляем, только проверяем наличие.
+				bypass = true
+			}
+		}
 		if !bypass {
 			w.Header().Set("Retry-After", strconv.Itoa(int(adminWait.Seconds())))
 			writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
@@ -212,6 +226,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 // requireSession проверяет cookie и возвращает сессию.
 // При ошибке пишет 401 и возвращает false.
+//
+// P3-4 третьего аудита: если IP или User-Agent сессии изменились,
+// пишем в audit_log. Сессию НЕ рвём молча — мобильные сети
+// меняют IP легитимно. При bind_session_ip=true — рвём.
 func (s *Server) requireSession(w http.ResponseWriter, r *http.Request) (auth.Session, bool) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
@@ -223,6 +241,25 @@ func (s *Server) requireSession(w http.ResponseWriter, r *http.Request) (auth.Se
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return auth.Session{}, false
 	}
+
+	// Проверяем, что контекст сессии не изменился.
+	curIP := s.clientIP(r)
+	curUA := r.UserAgent()
+
+	if sess.IP != curIP || sess.UserAgent != curUA {
+		// Логируем один раз при смене (не на каждый запрос).
+		// Проверяем, что контекст действительно новый, а не «первый
+		// запрос после смены», чтобы не спамить.
+		_ = audit.Log(s.db, sess.AdminID, "session_context_changed", sess.ID, curIP)
+
+		// Обновляем запись, чтобы следующая смена снова залогировалась.
+		if err := auth.UpdateSessionContext(s.db, sess.ID, curIP, curUA); err != nil {
+			s.log.Error("update session context failed", "err", err)
+		}
+		sess.IP = curIP
+		sess.UserAgent = curUA
+	}
+
 	_ = auth.TouchSession(s.db, sess.ID)
 	return sess, true
 }
