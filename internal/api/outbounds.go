@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -173,9 +174,22 @@ func (s *Server) handleOutbound(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// reservedOutboundTags — теги, которые gopanel добавляет в конфиг
+// сама. Пользовательский outbound с таким тегом либо сломает
+// `xray -test` (дубликат), либо переопределит системный маршрут.
+// См. P3-2 третьего аудита.
+var reservedOutboundTags = []string{"direct", "block", "api"}
+
 func validateOutbound(p outboundPayload) error {
-	if strings.TrimSpace(p.Tag) == "" {
+	tag := strings.TrimSpace(p.Tag)
+	if tag == "" {
 		return errors.New("tag is required")
+	}
+	lower := strings.ToLower(tag)
+	for _, reserved := range reservedOutboundTags {
+		if lower == reserved {
+			return fmt.Errorf("тег %q зарезервирован (используется gopanel)", tag)
+		}
 	}
 	if strings.TrimSpace(p.Protocol) == "" {
 		return errors.New("protocol is required")

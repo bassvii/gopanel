@@ -229,9 +229,22 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 // reservedPorts — порты, которые нельзя занимать инбаундом.
 // 10085 — встроенный API Xray для StatsService.
 // Порт админки панели проверяется отдельно (передаётся в validateInbound).
+// reservedInboundTags — теги, которые gopanel добавляет в конфиг
+// сама. Пользовательский инбаунд с таким тегом либо сломает
+// `xray -test` (дубликат тега), либо уведёт трафик в служебный
+// outbound. См. P3-2 третьего аудита.
+var reservedInboundTags = []string{"api", "direct", "block"}
+
 func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, excludeID int64) error {
-	if strings.TrimSpace(p.Tag) == "" {
+	tag := strings.TrimSpace(p.Tag)
+	if tag == "" {
 		return errors.New("tag is required")
+	}
+	lower := strings.ToLower(tag)
+	for _, reserved := range reservedInboundTags {
+		if lower == reserved {
+			return fmt.Errorf("тег %q зарезервирован (используется gopanel)", tag)
+		}
 	}
 	if strings.TrimSpace(p.Protocol) == "" {
 		return errors.New("protocol is required")
@@ -267,5 +280,50 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 			return err
 		}
 	}
+
+	// P3-3: SOCKS/HTTP без пользователей = открытый прокси.
+	// Xray по умолчанию не требует auth. Пока инбаунд не enabled,
+	// это не проблема (не слушает), но при включении — уязвимость.
+	if (p.Protocol == "socks" || p.Protocol == "http") && p.Enabled {
+		if !hasAuthUsers(p.SettingsJSON) {
+			return fmt.Errorf(
+				"%s инбаунд без пользователей — открытый прокси. "+
+					"Добавьте хотя бы одного пользователя в settings.users "+
+					"или отключите инбаунд (enabled=false)",
+				p.Protocol,
+			)
+		}
+	}
+
 	return nil
+}
+
+// hasAuthUsers проверяет, есть ли в settings_json хотя бы один
+// пользователь. Используется для SOCKS/HTTP, чтобы не поднять
+// открытый прокси (P3-3 третьего аудита).
+func hasAuthUsers(settingsJSON string) bool {
+	if settingsJSON == "" || settingsJSON == "{}" {
+		return false
+	}
+	var s struct {
+		Users []struct {
+			User     string `json:"user"`
+			Password string `json:"password"`
+		} `json:"users"`
+		Auth string `json:"auth"`
+	}
+	if err := json.Unmarshal([]byte(settingsJSON), &s); err != nil {
+		return false
+	}
+	// Если явно указан auth: noauth — это открытый прокси, отвергаем.
+	if s.Auth == "noauth" {
+		return false
+	}
+	// Иначе должно быть хотя бы одно имя пользователя.
+	for _, u := range s.Users {
+		if u.User != "" {
+			return true
+		}
+	}
+	return false
 }
