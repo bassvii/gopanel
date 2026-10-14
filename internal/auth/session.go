@@ -221,3 +221,15 @@ func DeleteOtherSessions(conn *sql.DB, adminID int64, keepSessionID string) erro
 	)
 	return err
 }
+
+// UpdateSessionContext обновляет IP и User-Agent сессии. Вызывается
+// из requireSession при смене контекста, чтобы следующая смена
+// снова попала в аудит, а не сравнивалась с изначальной записью
+// (иначе каждые 5 минут был бы новый лог). См. P3-4 третьего аудита.
+func UpdateSessionContext(conn *sql.DB, id, ip, userAgent string) error {
+	_, err := conn.Exec(
+		`UPDATE sessions SET ip = ?, user_agent = ? WHERE id = ?`,
+		ip, userAgent, id,
+	)
+	return err
+}

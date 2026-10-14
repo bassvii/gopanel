@@ -123,6 +123,24 @@ func UpdateGeo(ctx context.Context) (int, error) {
 	return updated, nil
 }
 
+// maxGeoFileSize — потолок на размер скачиваемого geo-файла.
+// Реальные geosite.dat/geoip.dat — десятки мегабайт; 100 МиБ
+// с запасом. Защита от подмены источника или редиректа на
+// бесконечный поток. См. P3-6 третьего аудита.
+const maxGeoFileSize = 100 * 1024 * 1024 // 100 MiB
+
+// httpClient — свой клиент с таймаутом и без бесконечных редиректов.
+// Раньше использовался http.DefaultClient без ограничений.
+var httpClient = &http.Client{
+	Timeout: 5 * time.Minute,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects (%d)", len(via))
+		}
+		return nil
+	},
+}
+
 // downloadFile скачивает URL во временный файл, проверяет SHA-256,
 // и только потом перемещает в целевой путь. При несовпадении —
 // удаляет временный файл и возвращает ошибку.
@@ -135,7 +153,7 @@ func downloadFile(ctx context.Context, url, expectedSHA, dst string) error {
 		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -145,18 +163,31 @@ func downloadFile(ctx context.Context, url, expectedSHA, dst string) error {
 		return fmt.Errorf("http %d", resp.StatusCode)
 	}
 
+	// Лимит на размер: io.LimitReader +1 байт, чтобы отличить
+	// «ровно в лимит» от «больше лимита».
+	limited := io.LimitReader(resp.Body, maxGeoFileSize+1)
+
 	tmp := dst + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	written, err := io.Copy(f, limited)
+	if err != nil {
+		f.Close()
 		os.Remove(tmp)
 		return err
 	}
-	f.Close()
+	if written > maxGeoFileSize {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("geo file exceeds %d bytes", maxGeoFileSize)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
 
 	// Проверка SHA-256 перед заменой целевого файла.
 	if err := verifySHA256(tmp, expectedSHA); err != nil {

@@ -101,16 +101,41 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleTOTPQR — GET /2fa/qr?url=<otpauth-url>
-// Отдаёт PNG с QR-кодом. URL передаётся в query, чтобы не хранить состояние.
+// handleTOTPQR — GET /2fa/qr
+//
+// Отдаёт PNG с QR-кодом для pending-секрета ЭТОГО админа.
+// Секрет НЕ принимается из query (P3-5 третьего аудита):
+// раньше URL otpauth://...secret=... летел в access-логи прокси,
+// history браузера, Referer. Теперь читаем pending-секрет из БД
+// и собираем otpauth URL сами.
 func (s *Server) handleTOTPQR(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireSession(w, r); !ok {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
 		return
 	}
 
-	otpauthURL := r.URL.Query().Get("url")
-	if otpauthURL == "" {
-		http.Error(w, "missing url", http.StatusBadRequest)
+	pending, err := auth.GetPendingTOTPSecret(s.db, sess.AdminID)
+	if err != nil {
+		s.log.Error("get pending totp failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if pending == "" {
+		http.Error(w, "setup not started", http.StatusBadRequest)
+		return
+	}
+
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
+	if err != nil {
+		s.log.Error("get admin failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	otpauthURL, err := auth.BuildOTPAuthURL(admin.Username, pending)
+	if err != nil {
+		s.log.Error("build otpauth url failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

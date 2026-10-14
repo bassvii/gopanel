@@ -509,8 +509,10 @@ function TOTPSection() {
           </p>
 
           <div className="flex justify-center">
+            {/* QR запрашивается без секрета в query: сервер сам
+                читает pending-секрет из БД по сессии. См. P3-5. */}
             <img
-              src={`${getBasePath()}/2fa/qr?url=${encodeURIComponent(setupData.otpauth_url)}`}
+              src={`${getBasePath()}/2fa/qr`}
               alt="QR-код"
               className="bg-white p-2 rounded-lg"
               width={200}
