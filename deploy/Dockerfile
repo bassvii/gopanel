@@ -1,5 +1,5 @@
 # --- Стадия 1: сборка фронтенда ---
-FROM node:24-alpine AS web
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # --- Стадия 2: сборка Go ---
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
@@ -17,7 +17,7 @@ COPY --from=web /web/dist ./web/dist
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/gopanel ./cmd/gopanel
 
 # --- Стадия 3: финальный образ ---
-FROM alpine:3.20
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 
 RUN apk add --no-cache ca-certificates tzdata unzip curl
 
@@ -47,6 +47,15 @@ RUN mkdir -p /var/lib/gopanel && \
     chown -R gopanel:gopanel /var/lib/gopanel
 
 USER gopanel
+
+# HEALTHCHECK: проверяем, что панель отвечает на /login под base_path.
+# 401 — это нормально (панель жива, требует логин). Не 0 exit —
+# если порт не слушается или таймаут.
+#
+# base_path читается из файла, который панель пишет при старте
+# (см. P2-13 / P2-7 аудита).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD sh -c 'PORT="${GOPANEL_PORT:-44559}"; BASE=$(cat /var/lib/gopanel/base_path 2>/dev/null || echo ""); wget -qO- "http://127.0.0.1:${PORT}${BASE}/login" >/dev/null 2>&1 || exit 1'
 
 # Порт по умолчанию (44559) — только для справки.
 # Реальный проброс портов делается через `-p` в docker run / compose.
