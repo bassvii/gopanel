@@ -14,7 +14,6 @@ import (
 	"strings"
 )
 
-// Config — все настройки панели.
 type Config struct {
 	DBPath   string `json:"db_path"`
 	Listen   string `json:"listen"`
@@ -24,6 +23,10 @@ type Config struct {
 	LogLevel string `json:"log_level"`
 	XrayConfigPath string `json:"xray_config_path"`
 	AllowNonLoopback bool `json:"allow_non_loopback"`
+	// SecureCookies выставляет флаг Secure на cookie сессии.
+	// Включать, когда панель за HTTPS-прокси (иначе cookie уйдёт
+	// и по HTTP). Для loopback по умолчанию false.
+	SecureCookies bool `json:"secure_cookies"`
 }
 
 // Default возвращает конфиг со значениями по умолчанию.
@@ -137,6 +140,9 @@ func applyEnv(cfg *Config) {
 	if os.Getenv("GOPANEL_ALLOW_NON_LOOPBACK") == "1" {
 		cfg.AllowNonLoopback = true
 	}
+	if os.Getenv("GOPANEL_SECURE_COOKIES") == "1" {
+		cfg.SecureCookies = true
+	}
 }
 
 func applyFlags(cfg *Config, args []string) error {
@@ -149,6 +155,7 @@ func applyFlags(cfg *Config, args []string) error {
 	fs.StringVar(&cfg.XrayBin, "xray-bin", cfg.XrayBin, "путь к бинарнику Xray")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "уровень логов: debug, info, warn, error")
 	fs.StringVar(&cfg.XrayConfigPath, "xray-config", cfg.XrayConfigPath, "путь к файлу конфига Xray")
+	fs.BoolVar(&cfg.SecureCookies, "secure-cookies", cfg.SecureCookies, "выставлять Secure на cookie сессии (для HTTPS)")
 
 	// --config уже разобран выше (extractConfigFlag), регистрируем его
 	// как «принимаем, но игнорируем» — иначе flag.Parse упадёт.

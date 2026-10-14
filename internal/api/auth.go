@@ -141,7 +141,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     s.secret,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   false,
+		Secure:   s.cfg.SecureCookies,
 		MaxAge:   int(auth.SessionTTL.Seconds()),
 	})
 
@@ -166,6 +166,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     s.secret,
 		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   s.cfg.SecureCookies,
 		MaxAge:   -1,
 	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

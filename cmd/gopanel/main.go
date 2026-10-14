@@ -300,6 +300,7 @@ func runServe(args []string) error {
 		Port:             port,
 		BasePath:         basePath,
 		AllowNonLoopback: cfg.AllowNonLoopback,
+		SecureCookies:    cfg.SecureCookies,
 	}, conn, log)
 	if err != nil {
 		return err

@@ -46,6 +46,8 @@ type Config struct {
 	Port     int
 	BasePath string
 	AllowNonLoopback bool
+	// SecureCookies выставляет Secure на cookie сессии.
+	SecureCookies bool
 }
 
 // New создаёт сервер.
