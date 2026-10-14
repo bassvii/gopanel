@@ -24,22 +24,22 @@ import (
 
 // Server — админский HTTP-сервер.
 type Server struct {
-	cfg    Config
-	db     *sql.DB
-	log    *slog.Logger
-	http   *http.Server
-	mux    *http.ServeMux
-	core   *xray.Core
-	system     *system.Collector
-	webFS    fs.FS
-	startTime  time.Time
+	cfg       Config
+	db        *sql.DB
+	log       *slog.Logger
+	http      *http.Server
+	mux       *http.ServeMux
+	core      *xray.Core
+	system    *system.Collector
+	webFS     fs.FS
+	startTime time.Time
 
-	secret   string
-	addr     string
-	port     int
-	reloadCh chan struct{}
+	secret            string
+	addr              string
+	port              int
+	reloadCh          chan struct{}
 	cachedXrayVersion string
-	dbPath     string
+	dbPath            string
 
 	// trustedNets — распарсенные CIDR'ы из cfg.TrustedProxies.
 	// Пустой, если доверенных прокси нет.
@@ -48,9 +48,9 @@ type Server struct {
 
 // Config — параметры сервера.
 type Config struct {
-	Listen   string
-	Port     int
-	BasePath string
+	Listen           string
+	Port             int
+	BasePath         string
 	AllowNonLoopback bool
 	// SecureCookies выставляет Secure на cookie сессии.
 	SecureCookies bool
@@ -66,10 +66,10 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 	}
 	ip := net.ParseIP(cfg.Listen)
 	if ip == nil {
-   	    return nil, fmt.Errorf("invalid listen address: %q", cfg.Listen)
+		return nil, fmt.Errorf("invalid listen address: %q", cfg.Listen)
 	}
 	if !ip.IsLoopback() && !cfg.AllowNonLoopback {
-        return nil, fmt.Errorf("admin listener must be on loopback, got %q", cfg.Listen)
+		return nil, fmt.Errorf("admin listener must be on loopback, got %q", cfg.Listen)
 	}
 
 	if cfg.Port < 0 || cfg.Port > 65535 {
@@ -174,6 +174,23 @@ func (s *Server) Start() error {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
+	}
+
+	// Предупреждаем, если панель не на loopback и cookie без Secure.
+	// Это типичный сценарий «выставил панель наружу без HTTPS» —
+	// cookie уйдёт по HTTP. См. P2-4 третьего аудита.
+	if !isLoopbackAddr(s.cfg.Listen) {
+		if !s.cfg.SecureCookies {
+			s.log.Warn("admin listener is not on loopback, but SecureCookies is false",
+				"listen", s.cfg.Listen,
+				"hint", "включите --secure-cookies и поставьте панель за HTTPS-прокси, "+
+					"или верните listener на 127.0.0.1")
+		}
+		if len(s.trustedNets) == 0 {
+			s.log.Warn("admin listener is not on loopback, but TrustedProxies is empty",
+				"listen", s.cfg.Listen,
+				"hint", "без TrustedProxies все запросы будут выглядеть с одного IP (адрес прокси)")
+		}
 	}
 
 	s.log.Info("admin listener started", "addr", s.addr)
@@ -330,4 +347,17 @@ func (s *Server) SetSystemCollector(c *system.Collector, dbPath string, startTim
 
 func (s *Server) SetXrayVersion(v string) {
 	s.cachedXrayVersion = v
+}
+
+// isLoopbackAddr возвращает true, если addr — loopback (127.0.0.1
+// или ::1) или пустой (тогда listener упадёт позже, не наша забота).
+func isLoopbackAddr(addr string) bool {
+	if addr == "" {
+		return false
+	}
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }
