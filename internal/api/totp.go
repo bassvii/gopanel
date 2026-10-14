@@ -194,7 +194,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	if !auth.VerifyTOTP(admin.TOTPSecret, req.Code) {
+	if !auth.VerifyAndConsumeTOTP(s.db, admin.ID, admin.TOTPSecret, req.Code) {
 		_ = audit.Log(s.db, sess.AdminID, "totp_disable_failed", "totp", s.clientIP(r))
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return

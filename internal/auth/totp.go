@@ -5,6 +5,7 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base32"
 	"encoding/hex"
@@ -43,21 +44,93 @@ func GenerateTOTPSecret(username string) (string, string, error) {
 // VerifyTOTP проверяет шестизначный код против секрета.
 // Допускается окно ±1 шаг (30 секунд), чтобы компенсировать
 // расхождение часов клиента и сервера.
+// VerifyTOTP проверяет шестизначный код против секрета.
+// Допускается окно ±1 шаг (30 секунд), чтобы компенсировать
+// расхождение часов клиента и сервера.
+//
+// ВАЖНО: эта функция НЕ защищает от replay-атак. Один и тот же
+// код можно использовать несколько раз в течение 90 секунд.
+// Для защиты от replay используйте VerifyAndConsumeTOTP.
 func VerifyTOTP(secret, code string) bool {
+	_, ok := totpCounter(secret, code, time.Now().UTC())
+	return ok
+}
+
+// totpCounter возвращает номер шага (counter), которому соответствует
+// код, и true, если код валиден. Проверяет окно ±1 шаг от now.
+//
+// pquerna/otp не возвращает counter напрямую, поэтому перебираем
+// три возможных шага вручную. Это те же три шага, что покрывает
+// ValidateCustom с Skew: 1.
+func totpCounter(secret, code string, now time.Time) (int64, bool) {
 	code = strings.TrimSpace(code)
 	if len(code) != 6 {
+		return 0, false
+	}
+
+	step := now.Unix() / 30
+	for _, delta := range []int64{0, -1, 1} {
+		counter := step + delta
+		expected, err := totp.GenerateCodeCustom(secret, time.Unix(counter*30, 0).UTC(), totp.ValidateOpts{
+			Period:    30,
+			Skew:      1,
+			Digits:    otp.DigitsSix,
+			Algorithm: otp.AlgorithmSHA1,
+		})
+		if err != nil {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1 {
+			return counter, true
+		}
+	}
+	return 0, false
+}
+
+// VerifyAndConsumeTOTP проверяет код и, если он валиден и его
+// counter строго больше сохранённого для админа, обновляет
+// totp_last_counter. Возвращает true, если код принят.
+//
+// Защищает от replay: один и тот же код (или код из предыдущего
+// 30-секундного окна) не может быть использован дважды.
+// См. P1-8 второго аудита.
+func VerifyAndConsumeTOTP(conn *sql.DB, adminID int64, secret, code string) bool {
+	if secret == "" || code == "" {
 		return false
 	}
-	valid, err := totp.ValidateCustom(code, secret, time.Now().UTC(), totp.ValidateOpts{
-		Period:    30,
-		Skew:      1,
-		Digits:    otp.DigitsSix,
-		Algorithm: otp.AlgorithmSHA1,
-	})
+
+	counter, ok := totpCounter(secret, code, time.Now().UTC())
+	if !ok {
+		return false
+	}
+
+	tx, err := conn.Begin()
 	if err != nil {
 		return false
 	}
-	return valid
+	defer tx.Rollback()
+
+	var last int64
+	if err := tx.QueryRow(
+		`SELECT totp_last_counter FROM admins WHERE id = ?`,
+		adminID,
+	).Scan(&last); err != nil {
+		return false
+	}
+
+	// Код должен быть из более позднего шага, чем уже использованный.
+	if counter <= last {
+		return false
+	}
+
+	if _, err := tx.Exec(
+		`UPDATE admins SET totp_last_counter = ? WHERE id = ?`,
+		counter, adminID,
+	); err != nil {
+		return false
+	}
+
+	return tx.Commit() == nil
 }
 
 // SaveTOTPSecret сохраняет секрет у администратора (включение 2FA).

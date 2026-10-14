@@ -228,6 +228,13 @@ CREATE TABLE admin_lockouts (
 ALTER TABLE admins ADD COLUMN totp_pending_secret TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 12,
+		name:    "totp last counter",
+		sql: `
+ALTER TABLE admins ADD COLUMN totp_last_counter INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 func migrate(conn *sql.DB) error {

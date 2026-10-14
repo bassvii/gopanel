@@ -9,11 +9,11 @@ import (
 	"errors"
 	"net"
 	"net/http"
-    "strconv"
-    "strings"
+	"strconv"
+	"strings"
 
-	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/audit"
+	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/notify"
 )
 
@@ -26,10 +26,10 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	OK       bool   `json:"ok"`
+	OK        bool   `json:"ok"`
 	CSRFToken string `json:"csrf_token,omitempty"`
 	NeedsTOTP bool   `json:"needs_totp,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // handleLogin — POST /login
@@ -86,6 +86,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// владельца, зная только его логин. Брутфорсер без TOTP
 		// по-прежнему застревает — сам факт наличия кода не помогает,
 		// он должен быть валидным.
+		// bypass — только грубая проверка «код валиден» без
+		// consume. Если пропустим — основной TOTP-блок ниже
+		// вызовет VerifyAndConsumeTOTP, который и защитит от replay.
 		bypass := admin.TOTPSecret != "" && req.TOTPCode != "" &&
 			auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode)
 		if !bypass {
@@ -96,7 +99,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = auth.RecordFailedAttempt(s.db, ip)          // IP-счётчик
+		_ = auth.RecordFailedAttempt(s.db, ip)            // IP-счётчик
 		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID) // + admin-счётчик
 		notify.LoginFailed(s.db, s.log, admin.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
@@ -113,7 +116,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode) {
+		// VerifyAndConsumeTOTP защищает от replay: один и тот же
+		// код не пройдёт второй раз, даже если он ещё валиден по
+		// времени. См. P1-8 второго аудита.
+		if auth.VerifyAndConsumeTOTP(s.db, admin.ID, admin.TOTPSecret, req.TOTPCode) {
 			totpOK = true
 		} else {
 			// Попробовать recovery-код.
