@@ -7,6 +7,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -30,8 +31,20 @@ func Open(path string) (*sql.DB, error) {
 	}
 	auth.SetSecretKey(key)
 
-	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
-	conn, err := sql.Open("sqlite", dsn)
+	// DSN через url.URL: путь с '?', '#', пробелами и другими
+	// спецсимволами не сломает параметры запроса.
+	// См. P2-20 второго аудита.
+	u := &url.URL{
+		Scheme: "file",
+		Opaque: path, // Opaque сохраняет path как есть (без экранирования /)
+	}
+	q := u.Query()
+	q.Set("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "foreign_keys(1)")
+	q.Add("_pragma", "busy_timeout(5000)")
+	u.RawQuery = q.Encode()
+
+	conn, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
