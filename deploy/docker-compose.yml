@@ -14,13 +14,21 @@ services:
       # - "8443:8443/udp"
       # Для других инбаундов (TCP):
       # - "443:443/tcp"
-      environment:
+    environment:
         - GOPANEL_LISTEN=0.0.0.0
         - GOPANEL_PORT=44559
         - GOPANEL_ALLOW_NON_LOOPBACK=1
         - GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db
     volumes:
-      - gopanel-data:/var/lib/gopanel
+        - gopanel-data:/var/lib/gopanel
+      # Xray — дочерний процесс панели. Для портов < 1024 (443 и т.п.)
+      # нужен CAP_NET_BIND_SERVICE. Даём только его, остальные
+      # capabilities сбрасываем: см. P2-2 третьего аудита.
+      # Если инбаунды только на портах > 1024, блок можно убрать.
+    cap_drop:
+        - ALL
+    cap_add:
+        - NET_BIND_SERVICE
     # Xray внутри контейнера слушает 0.0.0.0 и порты инбаундов.
     # Чтобы клиенты могли подключаться, пробрасываем порты инбаундов.
     # Например, для VLESS на 443:
