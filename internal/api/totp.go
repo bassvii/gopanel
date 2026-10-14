@@ -4,7 +4,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -17,7 +19,8 @@ type totpSetupResponse struct {
 }
 
 type totpEnableRequest struct {
-	Code string `json:"code"`
+	Password string `json:"password"`
+	Code     string `json:"code"`
 }
 
 type totpEnableResponse struct {
@@ -26,9 +29,19 @@ type totpEnableResponse struct {
 	Error         string   `json:"error,omitempty"`
 }
 
+type totpSetupRequest struct {
+	Password string `json:"password"`
+}
+
 // handleTOTPSetup — POST /2fa/setup
-// Генерирует секрет и возвращает его с otpauth-URL, но НЕ сохраняет.
-// Сохранение — на шаге enable, после проверки кода.
+//
+// Генерирует секрет и сохраняет его как pending. Требует текущий
+// пароль — иначе украденная сессия может подменить pending-секрет
+// на свой, а затем активировать его через /2fa/enable без ведома
+// владельца. См. P0-2 второго аудита.
+//
+// Если 2FA уже включена — отказываем: ротация делается через
+// disable (с паролем и текущим кодом) и повторный setup.
 func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.requireSession(w, r)
 	if !ok {
@@ -38,10 +51,41 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var req totpSetupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password required"})
+		return
+	}
+
 	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
 	if err != nil {
 		s.log.Error("get admin failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Уважаем admin lockout: не даём перебирать пароль через эту ручку.
+	if err := s.checkAdminLockout(w, admin.ID); err != nil {
+		return
+	}
+
+	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
+		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+		_ = audit.Log(s.db, sess.AdminID, "totp_setup_failed", "password", s.clientIP(r))
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
+		return
+	}
+	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
+
+	// Если 2FA уже включена — только явная ротация (disable → setup).
+	if admin.TOTPSecret != "" {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "2FA is already enabled, disable it first",
+		})
 		return
 	}
 
@@ -57,6 +101,8 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	_ = audit.Log(s.db, sess.AdminID, "totp_setup", "", s.clientIP(r))
 
 	writeJSON(w, http.StatusOK, totpSetupResponse{
 		Secret:     secret,
@@ -90,7 +136,11 @@ func (s *Server) handleTOTPQR(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTOTPEnable — POST /2fa/enable
-// Проверяет код, сохраняет секрет, генерирует коды восстановления.
+//
+// Требует текущий пароль и валидный код из pending-секрета.
+// После активации отзывает все сессии, кроме текущей: если сессия
+// украдена, атакующий не получит доступ после включения 2FA
+// владельцем. См. P0-2 второго аудита.
 func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.requireSession(w, r)
 	if !ok {
@@ -105,6 +155,31 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, totpEnableResponse{Error: "invalid json"})
 		return
 	}
+	if req.Password == "" || req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, totpEnableResponse{
+			Error: "password and code required",
+		})
+		return
+	}
+
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
+	if err != nil {
+		s.log.Error("get admin failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.checkAdminLockout(w, admin.ID); err != nil {
+		return
+	}
+
+	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
+		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+		_ = audit.Log(s.db, sess.AdminID, "totp_enable_failed", "password", s.clientIP(r))
+		writeJSON(w, http.StatusForbidden, totpEnableResponse{Error: "invalid credentials"})
+		return
+	}
+	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	pending, err := auth.GetPendingTOTPSecret(s.db, sess.AdminID)
 	if err != nil {
@@ -127,6 +202,12 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := auth.ActivatePendingTOTP(s.db, sess.AdminID); err != nil {
+		if errors.Is(err, auth.ErrTOTPAlreadyEnabled) {
+			writeJSON(w, http.StatusConflict, totpEnableResponse{
+				Error: "2FA is already enabled",
+			})
+			return
+		}
 		s.log.Error("activate totp failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -138,6 +219,10 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	// Отзываем все сессии, кроме текущей: даже если сессия украдена,
+	// после включения 2FA старая сессия недействительна.
+	_ = auth.DeleteOtherSessions(s.db, sess.AdminID, sess.ID)
 
 	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPEnabled, "", s.clientIP(r))
 
@@ -189,16 +274,23 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.checkAdminLockout(w, admin.ID); err != nil {
+		return
+	}
+
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
+		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
 		_ = audit.Log(s.db, sess.AdminID, "totp_disable_failed", "password", s.clientIP(r))
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	if !auth.VerifyAndConsumeTOTP(s.db, admin.ID, admin.TOTPSecret, req.Code) {
+		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
 		_ = audit.Log(s.db, sess.AdminID, "totp_disable_failed", "totp", s.clientIP(r))
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	if err := auth.ClearTOTPSecret(s.db, sess.AdminID); err != nil {
 		s.log.Error("clear totp failed", "err", err)
@@ -226,4 +318,26 @@ func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"enabled": admin.TOTPSecret != "",
 	})
+}
+
+// checkAdminLockout проверяет, не залочен ли аккаунт админа, и
+// если да — пишет 429 с Retry-After. Используется в sensitive-
+// ручках (setup/enable/disable 2FA, change-password, backup), где
+// нельзя перебирать пароль через украденную сессию.
+// См. P1-2 второго аудита.
+func (s *Server) checkAdminLockout(w http.ResponseWriter, adminID int64) error {
+	locked, wait, err := auth.IsAdminLockedOut(s.db, adminID)
+	if err != nil {
+		s.log.Error("admin lockout check failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return err
+	}
+	if locked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{
+			"error": "too many attempts, try later",
+		})
+		return errors.New("locked out")
+	}
+	return nil
 }

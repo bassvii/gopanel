@@ -190,8 +190,18 @@ func GetPendingTOTPSecret(conn *sql.DB, adminID int64) (string, error) {
 	return plain, nil
 }
 
+// ErrTOTPAlreadyEnabled возвращается ActivatePendingTOTP, если у
+// админа уже включена 2FA. Защита от подмены активного секрета
+// через /2fa/setup + /2fa/enable без ведома владельца (сессия
+// украдена) — см. P0-2 второго аудита.
+var ErrTOTPAlreadyEnabled = errors.New("2FA is already enabled")
+
 // ActivatePendingTOTP переносит черновой секрет в активный и очищает pending.
 // Вызывается только после успешной проверки кода в /2fa/enable.
+//
+// Отказывается работать, если 2FA уже включена: ротация секрета
+// должна идти через явный сценарий с подтверждением старого кода,
+// а не через тихую подмену pending.
 func ActivatePendingTOTP(conn *sql.DB, adminID int64) error {
 	tx, err := conn.Begin()
 	if err != nil {
@@ -199,15 +209,18 @@ func ActivatePendingTOTP(conn *sql.DB, adminID int64) error {
 	}
 	defer tx.Rollback()
 
-	var pending string
+	var pending, active string
 	if err := tx.QueryRow(
-		`SELECT totp_pending_secret FROM admins WHERE id = ?`,
+		`SELECT totp_pending_secret, totp_secret FROM admins WHERE id = ?`,
 		adminID,
-	).Scan(&pending); err != nil {
+	).Scan(&pending, &active); err != nil {
 		return fmt.Errorf("get pending: %w", err)
 	}
 	if pending == "" {
 		return errors.New("no pending totp secret")
+	}
+	if active != "" {
+		return ErrTOTPAlreadyEnabled
 	}
 
 	if _, err := tx.Exec(
