@@ -74,10 +74,10 @@ func runAdmin(args []string) error {
 
 	fs := flag.NewFlagSet("admin create", flag.ContinueOnError)
 	var (
-		user     = fs.String("user", "", "имя администратора")
-		password = fs.String("password", "", "пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD или интерактивно)")
-		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
-		cfgPath  = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
+		user       = fs.String("user", "", "имя администратора")
+		passwordIn = fs.String("password-stdin", "", "устарело, не используйте: пароль из stdin")
+		dbPath     = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+		cfgPath    = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
 	)
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -86,17 +86,21 @@ func runAdmin(args []string) error {
 	if *user == "" {
 		return fmt.Errorf("--user is required")
 	}
-	if *password == "" {
-		*password = os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	if *passwordIn != "" {
+		return fmt.Errorf("флаг --password-stdin удалён: передавайте пароль интерактивно " +
+			"или через переменную окружения GOPANEL_ADMIN_PASSWORD (последнее не рекомендуется)")
 	}
-	if *password == "" {
-		// Спрашиваем пароль интерактивно, чтобы он не попадал
-		// в ps и shell history.
+
+	// Пароль только интерактивно. Флаг --password убран: он попадал
+	// в ps и shell history. Env GOPANEL_ADMIN_PASSWORD оставлен как
+	// fallback для CI, но задокументирован как небезопасный.
+	password := os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	if password == "" {
 		p, err := readPasswordInteractive(*user)
 		if err != nil {
 			return err
 		}
-		*password = p
+		password = p
 	}
 
 	cfg, err := config.Load(*cfgPath, nil)
@@ -113,7 +117,7 @@ func runAdmin(args []string) error {
 	}
 	defer conn.Close()
 
-	id, err := auth.CreateAdmin(conn, *user, *password)
+	id, err := auth.CreateAdmin(conn, *user, password)
 	if err != nil {
 		return err
 	}
@@ -126,10 +130,10 @@ func runAdmin(args []string) error {
 func runResetPassword(args []string) error {
 	fs := flag.NewFlagSet("reset-password", flag.ContinueOnError)
 	var (
-		user     = fs.String("user", "", "имя администратора")
-		password = fs.String("password", "", "новый пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD или интерактивно)")
-		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
-		cfgPath  = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
+		user       = fs.String("user", "", "имя администратора")
+		passwordIn = fs.String("password-stdin", "", "устарело, не используйте")
+		dbPath     = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+		cfgPath    = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -138,15 +142,17 @@ func runResetPassword(args []string) error {
 	if *user == "" {
 		return fmt.Errorf("--user is required")
 	}
-	if *password == "" {
-		*password = os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	if *passwordIn != "" {
+		return fmt.Errorf("флаг --password-stdin удалён: передавайте пароль интерактивно")
 	}
-	if *password == "" {
+
+	password := os.Getenv("GOPANEL_ADMIN_PASSWORD")
+	if password == "" {
 		p, err := readPasswordInteractive(*user)
 		if err != nil {
 			return err
 		}
-		*password = p
+		password = p
 	}
 
 	cfg, err := config.Load(*cfgPath, nil)
@@ -163,7 +169,7 @@ func runResetPassword(args []string) error {
 	}
 	defer conn.Close()
 
-	if err := auth.ResetPassword(conn, *user, *password); err != nil {
+	if err := auth.ResetPassword(conn, *user, password); err != nil {
 		return err
 	}
 	_ = audit.Log(conn, 0, audit.ActionPasswordReset, *user, "cli")
@@ -413,6 +419,9 @@ func checkAdminExists(conn *sql.DB, log *slog.Logger) error {
 	return nil
 }
 
+// resolvePort возвращает порт админки: либо из флага/конфига,
+// либо из БД. Если в БД лежит битое значение — возвращает ошибку,
+// чтобы панель не «переезжала» на случайный порт при каждом старте.
 func resolvePort(conn *sql.DB, requested int) (int, error) {
 	if requested != 0 {
 		return requested, nil
@@ -421,12 +430,16 @@ func resolvePort(conn *sql.DB, requested int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if !ok {
+	if !ok || v == "" {
+		// Ничего не сохранено — выбираем случайный (0 = «любой свободный»).
 		return 0, nil
 	}
 	p, err := strconv.Atoi(v)
-	if err != nil || p < 1 || p > 65535 {
-		return 0, nil
+	if err != nil {
+		return 0, fmt.Errorf("settings.admin_port содержит не число: %q", v)
+	}
+	if p < 1 || p > 65535 {
+		return 0, fmt.Errorf("settings.admin_port вне диапазона 1..65535: %d", p)
 	}
 	return p, nil
 }
@@ -654,7 +667,10 @@ func runBackup(args []string) error {
 		return err
 	}
 
-	info, _ := os.Stat(out)
+	info, err := os.Stat(out)
+	if err != nil {
+		return fmt.Errorf("stat backup %s: %w", out, err)
+	}
 	fmt.Printf("backup created: %s (%d bytes)\n", out, info.Size())
 	return nil
 }
