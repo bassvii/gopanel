@@ -69,7 +69,7 @@ func run(args []string) error {
 
 func runAdmin(args []string) error {
 	if len(args) == 0 || args[0] != "create" {
-		return fmt.Errorf("usage: gopanel admin create --user NAME [--password PASS]")
+		return fmt.Errorf("usage: gopanel admin create --user NAME (пароль запросится интерактивно)")
 	}
 
 	fs := flag.NewFlagSet("admin create", flag.ContinueOnError)

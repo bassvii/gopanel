@@ -340,9 +340,10 @@ function PanicSection() {
             color: 'var(--text-muted)',
           }}
         >
-{`gopanel reset-password --user admin --password "новый-пароль"
+          {`gopanel reset-password --user admin
 
-# Сбросит пароль, отключит 2FA и завершит все сессии`}
+          # Спросит новый пароль интерактивно (без эха).
+          # Сбросит пароль, отключит 2FA и завершит все сессии.`}
         </pre>
       </div>
     </Section>
