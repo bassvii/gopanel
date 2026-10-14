@@ -27,6 +27,12 @@ type Config struct {
 	// Включать, когда панель за HTTPS-прокси (иначе cookie уйдёт
 	// и по HTTP). Для loopback по умолчанию false.
 	SecureCookies bool `json:"secure_cookies"`
+
+	// TrustedProxies — список CIDR, от которых принимается
+	// X-Forwarded-For. Если RemoteAddr не входит в этот список,
+	// заголовок игнорируется (защита от подмены IP).
+	// Пример: ["127.0.0.1/32", "::1/128", "10.0.0.0/8"].
+	TrustedProxies []string `json:"trusted_proxies"`
 }
 
 // Default возвращает конфиг со значениями по умолчанию.
@@ -143,6 +149,23 @@ func applyEnv(cfg *Config) {
 	if os.Getenv("GOPANEL_SECURE_COOKIES") == "1" {
 		cfg.SecureCookies = true
 	}
+	if v := os.Getenv("GOPANEL_TRUSTED_PROXIES"); v != "" {
+		cfg.TrustedProxies = splitCSV(v)
+	}
+}
+
+// splitCSV разбивает строку по запятой, тримит пробелы, отбрасывает
+// пустые элементы. Нужен для env-переменных со списком.
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func applyFlags(cfg *Config, args []string) error {
@@ -157,6 +180,9 @@ func applyFlags(cfg *Config, args []string) error {
 	fs.StringVar(&cfg.XrayConfigPath, "xray-config", cfg.XrayConfigPath, "путь к файлу конфига Xray")
 	fs.BoolVar(&cfg.SecureCookies, "secure-cookies", cfg.SecureCookies, "выставлять Secure на cookie сессии (для HTTPS)")
 
+	var trustedProxiesFlag string
+	fs.StringVar(&trustedProxiesFlag, "trusted-proxies", "", "CIDR через запятую, от которых доверяем X-Forwarded-For")
+
 	// --config уже разобран выше (extractConfigFlag), регистрируем его
 	// как «принимаем, но игнорируем» — иначе flag.Parse упадёт.
 	var _unused string
@@ -164,6 +190,16 @@ func applyFlags(cfg *Config, args []string) error {
 
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	// Флаг --trusted-proxies: если задан, переопределяет env.
+	// Пустая строка = не трогать (значит, остаётся из env или файла).
+	if trustedProxiesFlag != "" {
+		cfg.TrustedProxies = splitCSV(trustedProxiesFlag)
 	}
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		return errors.New("port must be 0..65535")

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
     "strconv"
+    "strings"
 
 	"github.com/bassvii/gopanel/internal/auth"
 	"github.com/bassvii/gopanel/internal/audit"
@@ -38,7 +39,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 
 	locked, wait, err := auth.IsLockedOut(s.db, ip)
 	if err != nil {
@@ -165,7 +166,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			_ = auth.DeleteSession(s.db, sess.ID)
-			_ = audit.Log(s.db, sess.AdminID, audit.ActionLogout, "", clientIP(r))
+			_ = audit.Log(s.db, sess.AdminID, audit.ActionLogout, "", s.clientIP(r))
 		}
 	}
 
@@ -228,11 +229,67 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// clientIP вытаскивает IP из RemoteAddr.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// clientIP возвращает IP клиента для логов, rate limit и audit.
+//
+// Если RemoteAddr входит в trustedNets (доверенные прокси), берём
+// адрес из X-Forwarded-For — последний недоверенный в цепочке
+// (стандартный подход, чтобы клиент не мог подделать IP, дописав
+// свой XFF-заголовок).
+//
+// Иначе (RemoteAddr не доверенный) — возвращаем RemoteAddr:
+// заголовок X-Forwarded-For игнорируется, подмена невозможна.
+func (s *Server) clientIP(r *http.Request) string {
+	remoteIP := extractHost(r.RemoteAddr)
+
+	if !s.isTrustedProxy(remoteIP) {
+		return remoteIP
+	}
+
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return remoteIP
+	}
+
+	// XFF: "client, proxy1, proxy2". Идём справа налево, пропуская
+	// доверенные адреса. Первый недоверенный — клиент.
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip := strings.TrimSpace(parts[i])
+		if ip == "" {
+			continue
+		}
+		if !s.isTrustedProxy(ip) {
+			return ip
+		}
+	}
+
+	// Все адреса в XFF доверенные — берём самый левый.
+	return strings.TrimSpace(parts[0])
+}
+
+// isTrustedProxy проверяет, входит ли IP в trustedNets.
+func (s *Server) isTrustedProxy(ipStr string) bool {
+	if len(s.trustedNets) == 0 {
+		return false
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, n := range s.trustedNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractHost возвращает хост из "host:port" или сам addr,
+// если разделителя нет.
+func extractHost(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return r.RemoteAddr
+		return addr
 	}
 	return host
 }

@@ -139,7 +139,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPEnabled, "", clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPEnabled, "", s.clientIP(r))
 
 	writeJSON(w, http.StatusOK, totpEnableResponse{
 		OK:            true,
@@ -163,7 +163,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPDisabled, "", clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, audit.ActionTOTPDisabled, "", s.clientIP(r))
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

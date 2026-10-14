@@ -45,7 +45,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "password_change", "", clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "password_change", "", s.clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -94,7 +94,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "sessions_revoked", "", clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "sessions_revoked", "", s.clientIP(r))
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
 	default:
@@ -130,6 +130,6 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	_ = audit.Log(s.db, sess.AdminID, "session_revoked", id, clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "session_revoked", id, s.clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

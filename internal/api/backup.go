@@ -53,7 +53,7 @@ func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = audit.Log(s.db, sess.AdminID, "backup_download_failed", "", clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "backup_download_failed", "", s.clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
 		return
 	}
@@ -70,6 +70,6 @@ func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "backup_download", name, clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "backup_download", name, s.clientIP(r))
 	notify.BackupCreated(s.db, s.log, name)
 }

@@ -40,6 +40,10 @@ type Server struct {
 	reloadCh chan struct{}
 	cachedXrayVersion string
 	dbPath     string
+
+	// trustedNets — распарсенные CIDR'ы из cfg.TrustedProxies.
+	// Пустой, если доверенных прокси нет.
+	trustedNets []*net.IPNet
 }
 
 // Config — параметры сервера.
@@ -50,6 +54,9 @@ type Config struct {
 	AllowNonLoopback bool
 	// SecureCookies выставляет Secure на cookie сессии.
 	SecureCookies bool
+	// TrustedProxies — CIDR'ы, от которых доверяем X-Forwarded-For.
+	// Пустой список = доверяем только RemoteAddr.
+	TrustedProxies []string
 }
 
 // New создаёт сервер.
@@ -77,13 +84,39 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 		secret = "/" + secret
 	}
 
+	// Парсим доверенные прокси.
+	var trustedNets []*net.IPNet
+	for _, cidr := range cfg.TrustedProxies {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		// Поддерживаем как CIDR (10.0.0.0/8), так и одиночный IP
+		// (127.0.0.1 → 127.0.0.1/32).
+		if !strings.Contains(cidr, "/") {
+			if ip := net.ParseIP(cidr); ip != nil {
+				if ip.To4() != nil {
+					cidr += "/32"
+				} else {
+					cidr += "/128"
+				}
+			}
+		}
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted proxy %q: %w", cidr, err)
+		}
+		trustedNets = append(trustedNets, ipnet)
+	}
+
 	s := &Server{
-		cfg:      cfg,
-		db:       conn,
-		log:      log,
-		mux:      http.NewServeMux(),
-		secret:   secret,
-		reloadCh: make(chan struct{}, 1),
+		cfg:         cfg,
+		db:          conn,
+		log:         log,
+		mux:         http.NewServeMux(),
+		secret:      secret,
+		reloadCh:    make(chan struct{}, 1),
+		trustedNets: trustedNets,
 	}
 	s.routes()
 	return s, nil

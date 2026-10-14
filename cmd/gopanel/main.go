@@ -301,6 +301,7 @@ func runServe(args []string) error {
 		BasePath:         basePath,
 		AllowNonLoopback: cfg.AllowNonLoopback,
 		SecureCookies:    cfg.SecureCookies,
+		TrustedProxies:   cfg.TrustedProxies,
 	}, conn, log)
 	if err != nil {
 		return err

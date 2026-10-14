@@ -110,7 +110,7 @@ func (s *Server) handleRoutingRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "routing_create", p.RuleTag, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "routing_create", p.RuleTag, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]any{"id": id})
 
@@ -188,7 +188,7 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "routing_update", p.RuleTag, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "routing_update", p.RuleTag, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
@@ -200,7 +200,7 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "routing_delete", parts[0], clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "routing_delete", parts[0], s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 

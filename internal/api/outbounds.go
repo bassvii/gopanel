@@ -90,7 +90,7 @@ func (s *Server) handleOutbounds(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "outbound_create", p.Tag, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "outbound_create", p.Tag, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]any{"id": id})
 
@@ -151,7 +151,7 @@ func (s *Server) handleOutbound(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "outbound_update", p.Tag, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "outbound_update", p.Tag, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
@@ -163,7 +163,7 @@ func (s *Server) handleOutbound(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "outbound_delete", idStr, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "outbound_delete", idStr, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 

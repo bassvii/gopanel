@@ -54,7 +54,7 @@ func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "geo_update", "", clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "geo_update", "", s.clientIP(r))
 	notify.GeoUpdated(s.db, s.log, updated)
 
 	// Перезапустить Xray, чтобы он подхватил новые файлы.

@@ -198,7 +198,7 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "tls_cert_create", req.Domain, clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "tls_cert_create", req.Domain, s.clientIP(r))
 	writeJSON(w, http.StatusOK, tlsCertResponse{
 		CertPath: res.CertPath,
 		KeyPath:  res.KeyPath,

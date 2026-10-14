@@ -189,7 +189,7 @@ func (s *Server) handleRoutingPresetApply(w http.ResponseWriter, r *http.Request
 		created++
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "routing_preset_apply", name, clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "routing_preset_apply", name, s.clientIP(r))
 	s.requestReload()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,

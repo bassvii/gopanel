@@ -42,7 +42,7 @@ func (s *Server) logger(next http.Handler) http.Handler {
 			"path", s.sanitizePath(r.URL.Path),
 			"status", rw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"remote", r.RemoteAddr,
+			"remote", s.clientIP(r),
 		)
 	})
 }

@@ -114,7 +114,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "user_create", p.Name, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "user_create", p.Name, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]any{"id": id})
 
@@ -171,7 +171,7 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "user_update", p.Name, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "user_update", p.Name, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
@@ -183,7 +183,7 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "user_delete", idStr, clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "user_delete", idStr, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
@@ -254,7 +254,7 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "user_inbound_attach", "", clientIP(r))
+	_ = audit.Log(s.db, sess.AdminID, "user_inbound_attach", "", s.clientIP(r))
 	s.requestReload()
 	writeJSON(w, http.StatusOK, map[string]any{"credential_json": cred})
 }
