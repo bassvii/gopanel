@@ -332,16 +332,14 @@ ports:
 
 ### Порт 443 и права
 
-Xray внутри контейнера запускается от непривилегированного пользователя `gopanel`. Порт 443 (< 1024) требует прав.
+Xray внутри контейнера запускается от непривилегированного пользователя `gopanel`. Порт 443 (< 1024) требует capability `CAP_NET_BIND_SERVICE`.
 
-В Dockerfile должен быть `setcap`:
+**Правильный способ** — дать capability контейнеру, а не навешивать её на бинарник через `setcap`. File capabilities в контейнере не работают без `--cap-add` или `--privileged`.
 
-```dockerfile
-RUN apk add --no-cache libcap && \
-    setcap 'cap_net_bind_service=+ep' /usr/local/bin/xray
-```
+В `docker run`:
 
-Если `setcap` нет — используйте порт > 1024 (например, 8443).
+```bash
+docker run ... --cap-add=NET_BIND_SERVICE ... gopanel:latest
 
 ---
 
@@ -597,16 +595,12 @@ ENV NODE_OPTIONS=--dns-result-order=ipv4first
 
 ### Xray не может занять порт 443
 
-Внутри контейнера Xray работает от непривилегированного пользователя.
+Внутри контейнера Xray работает от непривилегированного пользователя. Порт < 1024 требует `CAP_NET_BIND_SERVICE`. Дать её можно двумя способами:
 
-**Решение 1:** используйте порт > 1024 (например, 8443).
+**Решение 1 (рекомендую):** пробросить порт > 1024 внутри контейнера на 443 снаружи.
 
-**Решение 2:** добавьте в Dockerfile:
-
-```dockerfile
-RUN apk add --no-cache libcap && \
-    setcap 'cap_net_bind_service=+ep' /usr/local/bin/xray
-```
+```bash
+docker run ... -p 443:8443 ...
 
 ### Панель перезапускается циклически
 
