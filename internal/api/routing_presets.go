@@ -52,8 +52,10 @@ var presets = map[string]preset{
 		},
 	},
 	"private-direct": {
-		Name:        "Приватные IP — напрямую",
-		Description: "Локальные адреса не идут через proxy",
+		Name: "Приватные IP — напрямую (не рекомендуется)",
+		Description: "Попытка направить локальные адреса в DIRECT. " +
+			"НЕ СРАБОТАЕТ: встроенное правило безопасности блокирует " +
+			"geoip:private раньше. Оставлено для совместимости.",
 		Rules: []presetRule{
 			{
 				RuleTag:     "Приватные — DIRECT",
