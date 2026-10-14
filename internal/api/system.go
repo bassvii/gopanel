@@ -9,10 +9,10 @@ import (
 )
 
 type systemResponse struct {
-	Current systemCurrent   `json:"current"`
-	History []systemPoint   `json:"history"`
-	Xray    xrayStatus      `json:"xray"`
-	Panel   panelStatus     `json:"panel"`
+	Current systemCurrent `json:"current"`
+	History []systemPoint `json:"history"`
+	Xray    xrayStatus    `json:"xray"`
+	Panel   panelStatus   `json:"panel"`
 }
 
 type systemCurrent struct {
@@ -32,9 +32,9 @@ type systemCurrent struct {
 }
 
 type systemPoint struct {
-	Timestamp  int64   `json:"ts"`
-	CPUPercent float64 `json:"cpu_percent"`
-	MemPercent float64 `json:"mem_percent"`
+	Timestamp   int64   `json:"ts"`
+	CPUPercent  float64 `json:"cpu_percent"`
+	MemPercent  float64 `json:"mem_percent"`
 	DiskPercent float64 `json:"disk_percent"`
 	LoadAvg1    float64 `json:"load_avg_1"`
 }
@@ -51,23 +51,21 @@ type panelStatus struct {
 	DBSizeBytes   int64  `json:"db_size_bytes"`
 }
 
-// handleSystemStats — GET /system/stats
+// handleSystemStats — GET /system/stats.
+//
+// Версия Xray берётся из кеша (s.cachedXrayVersion), который
+// обновляется после удачного reload, а не на каждый GET. Раньше
+// каждый опрос дашборда запускал `xray version` — лишний exec
+// раз в 5 секунд. См. P4-1 третьего аудита.
 func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
-	s.log.Info("sysstats: begin")
-	defer s.log.Info("sysstats: end")
-
 	if _, ok := s.requireSession(w, r); !ok {
-		s.log.Info("sysstats: session failed")
 		return
 	}
-	s.log.Info("sysstats: session ok")
 
 	resp := systemResponse{}
 
 	if s.system != nil {
-		s.log.Info("sysstats: reading current")
-		cur, err := s.system.Current()
-		if err == nil {
+		if cur, err := s.system.Current(); err == nil {
 			resp.Current = systemCurrent{
 				CPUPercent:     cur.CPUPercent,
 				CPUCores:       cur.CPUCores,
@@ -84,46 +82,30 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 				Timestamp:      cur.Timestamp,
 			}
 		} else {
-			s.log.Warn("sysstats: current failed", "err", err)
+			s.log.Warn("system stats: current failed", "err", err)
 		}
-		s.log.Info("sysstats: reading history")
+
 		pts := s.system.History()
 		resp.History = make([]systemPoint, 0, len(pts))
 		for _, p := range pts {
 			resp.History = append(resp.History, systemPoint{
-				Timestamp:  p.Timestamp,
-				CPUPercent: p.CPUPercent,
-				MemPercent: p.MemPercent,
+				Timestamp:   p.Timestamp,
+				CPUPercent:  p.CPUPercent,
+				MemPercent:  p.MemPercent,
 				DiskPercent: p.DiskPercent,
 				LoadAvg1:    p.LoadAvg1,
 			})
 		}
-		s.log.Info("sysstats: history done", "points", len(pts))
 	}
-
-	s.log.Info("sysstats: xray")
 
 	if s.core != nil {
-		s.log.Info("sysstats: xray IsRunning")
 		resp.Xray.Running = s.core.IsRunning()
-		s.log.Info("sysstats: xray IsRunning done", "running", resp.Xray.Running)
-
-		s.log.Info("sysstats: xray Version")
-		if v, err := s.core.Version(); err == nil {
-			resp.Xray.Version = v
-		} else {
-			s.log.Warn("sysstats: xray Version failed", "err", err)
-		}
-		s.log.Info("sysstats: xray Version done")
-
+		resp.Xray.Version = s.cachedXrayVersion
 		if resp.Xray.Running {
-			s.log.Info("sysstats: xray UptimeSeconds")
 			resp.Xray.UptimeSeconds = s.core.UptimeSeconds()
-			s.log.Info("sysstats: xray UptimeSeconds done")
 		}
 	}
 
-	s.log.Info("sysstats: panel")
 	resp.Panel.Version = "0.1"
 	if !s.startTime.IsZero() {
 		resp.Panel.UptimeSeconds = int64(time.Since(s.startTime).Seconds())
@@ -134,6 +116,5 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.log.Info("sysstats: write")
 	writeJSON(w, http.StatusOK, resp)
 }
