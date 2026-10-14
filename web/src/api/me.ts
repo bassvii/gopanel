@@ -56,9 +56,10 @@ export async function enableTOTP(code: string): Promise<TOTPEnableResponse> {
   })
 }
 
-export async function disableTOTP(): Promise<void> {
+export async function disableTOTP(password: string, code: string): Promise<void> {
   await request('/2fa/disable', {
     method: 'POST',
+    body: { password, totp_code: code },
     withCSRF: true,
   })
 }

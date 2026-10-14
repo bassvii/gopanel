@@ -360,6 +360,9 @@ function TOTPSection() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [disablePassword, setDisablePassword] = useState('')
+  const [disableCode, setDisableCode] = useState('')
+  const [disableError, setDisableError] = useState('')
   const { confirm, dialog } = useConfirm()
 
   async function reload() {
@@ -416,6 +419,15 @@ function TOTPSection() {
   }
 
   async function handleDisable() {
+    if (!disablePassword) {
+      setDisableError('Введите пароль')
+      return
+    }
+    if (!disableCode) {
+      setDisableError('Введите код из приложения')
+      return
+    }
+
     const ok = await confirm({
       title: 'Отключить 2FA?',
       message:
@@ -426,15 +438,19 @@ function TOTPSection() {
     if (!ok) return
 
     setBusy(true)
+    setDisableError('')
     try {
-      await disableTOTP()
+      await disableTOTP(disablePassword, disableCode)
       setEnabled(false)
       setSetupData(null)
       setCode('')
       setRecoveryCodes(null)
+      setDisablePassword('')
+      setDisableCode('')
       toast.success('2FA отключена')
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка')
+      const msg = err instanceof ApiError ? err.message : 'Ошибка'
+      setDisableError(msg === 'invalid credentials' ? 'Неверный пароль или код' : msg)
     } finally {
       setBusy(false)
     }
@@ -451,7 +467,7 @@ function TOTPSection() {
           Загрузка...
         </div>
       ) : enabled ? (
-        <div className="space-y-3">
+        <div className="space-y-3 max-w-md">
           <div>
             <span
               className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded"
@@ -462,8 +478,23 @@ function TOTPSection() {
             </span>
           </div>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            2FA защищает вход. Для отключения потребуется подтверждение.
+            Для отключения введите пароль и текущий код из приложения.
           </p>
+          <Input
+            type="password"
+            placeholder="Пароль администратора"
+            value={disablePassword}
+            onChange={(e) => setDisablePassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          <Input
+            placeholder="Код из приложения"
+            value={disableCode}
+            onChange={(e) => setDisableCode(e.target.value)}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            error={disableError}
+          />
           <Button variant="ghost" size="sm" onClick={handleDisable} disabled={busy}>
             <ShieldOff size={14} />
             Отключить 2FA

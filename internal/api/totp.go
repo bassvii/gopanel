@@ -148,12 +148,55 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTOTPDisable — POST /2fa/disable
+type totpDisableRequest struct {
+	Password string `json:"password"`
+	Code     string `json:"totp_code"`
+}
+
+// handleTOTPDisable — POST /2fa/disable
+//
+// Требует пароль и валидный TOTP-код. Иначе украденная сессия
+// отключает 2FA одним запросом — а 2FA нужна именно на случай
+// кражи сессии. См. P0-2 второго аудита.
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.requireSession(w, r)
 	if !ok {
 		return
 	}
 	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+
+	var req totpDisableRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if req.Password == "" || req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password and totp_code required"})
+		return
+	}
+
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
+	if err != nil {
+		s.log.Error("get admin failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if admin.TOTPSecret == "" {
+		// 2FA уже отключена — нечего проверять.
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "2FA is not enabled"})
+		return
+	}
+
+	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
+		_ = audit.Log(s.db, sess.AdminID, "totp_disable_failed", "password", s.clientIP(r))
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
+		return
+	}
+	if !auth.VerifyTOTP(admin.TOTPSecret, req.Code) {
+		_ = audit.Log(s.db, sess.AdminID, "totp_disable_failed", "totp", s.clientIP(r))
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return
 	}
 
