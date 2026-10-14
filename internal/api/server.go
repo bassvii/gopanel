@@ -203,52 +203,87 @@ func (s *Server) SetCore(c *xray.Core) {
 func (s *Server) routes() {
 	s.mux = http.NewServeMux()
 
-	s.mux.HandleFunc(s.secret+"/login", s.handleLogin)
-	s.mux.HandleFunc(s.secret+"/logout", s.handleLogout)
-	s.mux.HandleFunc(s.secret+"/me", s.handleMe)
-	s.mux.HandleFunc(s.secret+"/2fa/setup", s.handleTOTPSetup)
-	s.mux.HandleFunc(s.secret+"/2fa/qr", s.handleTOTPQR)
-	s.mux.HandleFunc(s.secret+"/2fa/enable", s.handleTOTPEnable)
-	s.mux.HandleFunc(s.secret+"/2fa/disable", s.handleTOTPDisable)
-	s.mux.HandleFunc(s.secret+"/2fa/status", s.handleTOTPStatus)
-	s.mux.HandleFunc(s.secret+"/audit", s.handleAudit)
-	s.mux.HandleFunc(s.secret+"/inbounds", s.handleInbounds)
-	s.mux.HandleFunc(s.secret+"/inbounds/", s.handleInbound)
-	s.mux.HandleFunc(s.secret+"/users", s.handleUsers)
-	s.mux.HandleFunc(s.secret+"/users/", s.handleUserRoutes)
-	s.mux.HandleFunc(s.secret+"/stats/summary", s.handleStatsSummary)
-	s.mux.HandleFunc(s.secret+"/me/password", s.handleChangePassword)
-	s.mux.HandleFunc(s.secret+"/me/sessions", s.handleSessions)
-	s.mux.HandleFunc(s.secret+"/me/sessions/", s.handleSession)
-	s.mux.HandleFunc(s.secret+"/backup/download", s.handleBackupDownload)
-	s.mux.HandleFunc(s.secret+"/xray/x25519", s.handleX25519)
-	s.mux.HandleFunc(s.secret+"/xray/shortid", s.handleShortID)
-	s.mux.HandleFunc(s.secret+"/system/stats", s.handleSystemStats)
-	s.mux.HandleFunc(s.secret+"/outbounds", s.handleOutbounds)
-	s.mux.HandleFunc(s.secret+"/outbounds/", s.handleOutbound)
-	s.mux.HandleFunc(s.secret+"/routing/rules", s.handleRoutingRules)
-	s.mux.HandleFunc(s.secret+"/routing/rules/", s.handleRoutingRule)
-	s.mux.HandleFunc(s.secret+"/routing/presets", s.handleRoutingPresets)
-	s.mux.HandleFunc(s.secret+"/routing/presets/", s.handleRoutingPresetApply)
-	s.mux.HandleFunc(s.secret+"/system/geo/status", s.handleGeoStatus)
-	s.mux.HandleFunc(s.secret+"/system/geo/update", s.handleGeoUpdate)
-	s.mux.HandleFunc(s.secret+"/notifications", s.handleNotifications)
-	s.mux.HandleFunc(s.secret+"/notifications/read", s.handleNotificationsRead)
-	s.mux.HandleFunc(s.secret+"/xray/vlessenc", s.handleVlessEnc)
-	s.mux.HandleFunc(s.secret+"/xray/tls-cert", s.handleTLSCert)
+	// --- Аутентификация ---
+	s.mux.HandleFunc("POST "+s.secret+"/login", s.handleLogin)
+	s.mux.HandleFunc("POST "+s.secret+"/logout", s.handleLogout)
+	s.mux.HandleFunc("GET "+s.secret+"/me", s.handleMe)
 
+	// --- 2FA ---
+	s.mux.HandleFunc("POST "+s.secret+"/2fa/setup", s.handleTOTPSetup)
+	s.mux.HandleFunc("GET "+s.secret+"/2fa/qr", s.handleTOTPQR)
+	s.mux.HandleFunc("POST "+s.secret+"/2fa/enable", s.handleTOTPEnable)
+	s.mux.HandleFunc("POST "+s.secret+"/2fa/disable", s.handleTOTPDisable)
+	s.mux.HandleFunc("GET "+s.secret+"/2fa/status", s.handleTOTPStatus)
+
+	// --- Аудит ---
+	s.mux.HandleFunc("GET "+s.secret+"/audit", s.handleAudit)
+
+	// --- Inbounds ---
+	s.mux.HandleFunc("GET "+s.secret+"/inbounds", s.handleInbounds)
+	s.mux.HandleFunc("POST "+s.secret+"/inbounds", s.handleInbounds)
+	s.mux.HandleFunc("GET "+s.secret+"/inbounds/{id}", s.handleInbound)
+	s.mux.HandleFunc("PUT "+s.secret+"/inbounds/{id}", s.handleInbound)
+	s.mux.HandleFunc("DELETE "+s.secret+"/inbounds/{id}", s.handleInbound)
+
+	// --- Users ---
+	s.mux.HandleFunc("GET "+s.secret+"/users", s.handleUsers)
+	s.mux.HandleFunc("POST "+s.secret+"/users", s.handleUsers)
+	s.mux.HandleFunc("GET "+s.secret+"/users/{id}", s.handleUser)
+	s.mux.HandleFunc("PUT "+s.secret+"/users/{id}", s.handleUser)
+	s.mux.HandleFunc("DELETE "+s.secret+"/users/{id}", s.handleUser)
+	s.mux.HandleFunc("POST "+s.secret+"/users/{id}/inbounds", s.handleUserInbounds)
+
+	// --- Stats ---
+	s.mux.HandleFunc("GET "+s.secret+"/stats/summary", s.handleStatsSummary)
+
+	// --- Me ---
+	s.mux.HandleFunc("POST "+s.secret+"/me/password", s.handleChangePassword)
+	s.mux.HandleFunc("GET "+s.secret+"/me/sessions", s.handleSessions)
+	s.mux.HandleFunc("DELETE "+s.secret+"/me/sessions", s.handleSessions)
+	s.mux.HandleFunc("DELETE "+s.secret+"/me/sessions/{id}", s.handleSession)
+
+	// --- Backup ---
+	s.mux.HandleFunc("POST "+s.secret+"/backup/download", s.handleBackupDownload)
+
+	// --- Xray helpers ---
+	s.mux.HandleFunc("POST "+s.secret+"/xray/x25519", s.handleX25519)
+	s.mux.HandleFunc("POST "+s.secret+"/xray/shortid", s.handleShortID)
+	s.mux.HandleFunc("POST "+s.secret+"/xray/vlessenc", s.handleVlessEnc)
+	s.mux.HandleFunc("POST "+s.secret+"/xray/tls-cert", s.handleTLSCert)
+
+	// --- System ---
+	s.mux.HandleFunc("GET "+s.secret+"/system/stats", s.handleSystemStats)
+	s.mux.HandleFunc("GET "+s.secret+"/system/geo/status", s.handleGeoStatus)
+	s.mux.HandleFunc("POST "+s.secret+"/system/geo/update", s.handleGeoUpdate)
+
+	// --- Outbounds ---
+	s.mux.HandleFunc("GET "+s.secret+"/outbounds", s.handleOutbounds)
+	s.mux.HandleFunc("POST "+s.secret+"/outbounds", s.handleOutbounds)
+	s.mux.HandleFunc("GET "+s.secret+"/outbounds/{id}", s.handleOutbound)
+	s.mux.HandleFunc("PUT "+s.secret+"/outbounds/{id}", s.handleOutbound)
+	s.mux.HandleFunc("DELETE "+s.secret+"/outbounds/{id}", s.handleOutbound)
+
+	// --- Routing ---
+	s.mux.HandleFunc("GET "+s.secret+"/routing/rules", s.handleRoutingRules)
+	s.mux.HandleFunc("POST "+s.secret+"/routing/rules", s.handleRoutingRules)
+	s.mux.HandleFunc("GET "+s.secret+"/routing/rules/{id}", s.handleRoutingRule)
+	s.mux.HandleFunc("PUT "+s.secret+"/routing/rules/{id}", s.handleRoutingRule)
+	s.mux.HandleFunc("DELETE "+s.secret+"/routing/rules/{id}", s.handleRoutingRule)
+	s.mux.HandleFunc("POST "+s.secret+"/routing/rules/{id}/move", s.handleRoutingRuleMoveRoute)
+	s.mux.HandleFunc("GET "+s.secret+"/routing/presets", s.handleRoutingPresets)
+	s.mux.HandleFunc("POST "+s.secret+"/routing/presets/{name}", s.handleRoutingPresetApply)
+
+	// --- Notifications ---
+	s.mux.HandleFunc("GET "+s.secret+"/notifications", s.handleNotifications)
+	s.mux.HandleFunc("POST "+s.secret+"/notifications/read", s.handleNotificationsRead)
+
+	// --- Статика ---
 	if s.webFS != nil {
-		// Статика отдаётся только под секретным префиксом.
-		// На корне — 404. См. P2-13 аудита.
-		s.mux.HandleFunc(s.secret+"/", s.handleStatic)
-		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			http.NotFound(w, r)
-		})
-	} else {
-		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			http.NotFound(w, r)
-		})
+		s.mux.HandleFunc("GET "+s.secret+"/", s.handleStatic)
 	}
+	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
 }
 
 // handleStatic отдаёт файлы фронтенда. Если файл не найден —
@@ -283,18 +318,6 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(data)
-}
-
-// handleUserRoutes распределяет /users/{id}, /users/{id}/inbounds, /users/{id}/links.
-func (s *Server) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case strings.HasSuffix(r.URL.Path, "/inbounds"):
-		s.handleUserInbounds(w, r)
-	case strings.HasSuffix(r.URL.Path, "/links"):
-		s.handleUserLinks(w, r)
-	default:
-		s.handleUser(w, r)
-	}
 }
 
 // SetSystemCollector устанавливает сборщик метрик системы.

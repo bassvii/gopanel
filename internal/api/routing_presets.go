@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/db"
@@ -146,7 +145,7 @@ func (s *Server) handleRoutingPresetApply(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	name := strings.TrimPrefix(r.URL.Path, s.secret+"/routing/presets/")
+	name := r.PathValue("name")
 	p, ok := presets[name]
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown preset"})

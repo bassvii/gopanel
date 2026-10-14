@@ -127,21 +127,10 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// /routing/rules/{id}
-	path := strings.TrimPrefix(r.URL.Path, s.secret+"/routing/rules/")
-	parts := strings.Split(path, "/")
-	if len(parts) == 0 || parts[0] == "" {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-	id, err := strconv.ParseInt(parts[0], 10, 64)
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-
-	// /routing/rules/{id}/move — отдельный обработчик.
-	if len(parts) == 2 && parts[1] == "move" {
-		s.handleRoutingRuleMove(w, r, id)
 		return
 	}
 
@@ -200,7 +189,7 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		_ = audit.Log(s.db, sess.AdminID, "routing_delete", parts[0], s.clientIP(r))
+		_ = audit.Log(s.db, sess.AdminID, "routing_delete", idStr, s.clientIP(r))
 		s.requestReload()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
@@ -209,17 +198,20 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleRoutingRuleMove — POST /routing/rules/{id}/move?direction=up|down
-func (s *Server) handleRoutingRuleMove(w http.ResponseWriter, r *http.Request, id int64) {
+// handleRoutingRuleMoveRoute — POST /routing/rules/{id}/move?direction=up|down
+func (s *Server) handleRoutingRuleMoveRoute(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.requireSession(w, r)
 	if !ok {
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.requireCSRF(w, r, sess) {
 		return
 	}
-	if !s.requireCSRF(w, r, sess) {
+
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
 

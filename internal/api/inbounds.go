@@ -123,7 +123,7 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := strings.TrimPrefix(r.URL.Path, s.secret+"/inbounds/")
+	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)

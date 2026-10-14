@@ -5,7 +5,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -108,15 +107,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if r.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if !s.requireCSRF(w, r, sess) {
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, s.secret+"/me/sessions/")
+	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "invalid session id", http.StatusBadRequest)
 		return

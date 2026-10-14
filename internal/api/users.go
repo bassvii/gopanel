@@ -129,7 +129,7 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := strings.TrimPrefix(r.URL.Path, s.secret+"/users/")
+	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -213,13 +213,8 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// /users/{id}/inbounds
-	path := strings.TrimPrefix(r.URL.Path, s.secret+"/users/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 || parts[1] != "inbounds" {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-	userID, err := strconv.ParseInt(parts[0], 10, 64)
+	userIDStr := r.PathValue("id")
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, "invalid user id", http.StatusBadRequest)
 		return
