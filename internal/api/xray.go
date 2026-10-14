@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"encoding/json"
 	"path/filepath"
+	"regexp"
 
 	"github.com/bassvii/gopanel/internal/audit"
 )
@@ -112,6 +113,11 @@ func (s *Server) handleVlessEnc(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var (
+	certNameRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	certDomainRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
+)
+
 type tlsCertRequest struct {
 	Domain      string `json:"domain"`
 	Name        string `json:"name"`
@@ -153,14 +159,34 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Каталог для сертификатов рядом с БД.
-	dir := filepath.Join(filepath.Dir(s.dbPath), "certs")
-	if s.dbPath == "" {
-		dir = "./certs"
+	dir := "./certs"
+	if s.dbPath != "" {
+		dir = filepath.Join(filepath.Dir(s.dbPath), "certs")
 	}
 
 	name := req.Name
 	if name == "" {
 		name = "cert"
+	}
+
+	// Валидация до вызова ядра — чтобы отсеять мусор и traversal.
+	if !certNameRe.MatchString(name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid cert name: allowed a-z, A-Z, 0-9, _, - (1-64 chars)",
+		})
+		return
+	}
+	if req.Domain != "" && req.Domain != "localhost" && !certDomainRe.MatchString(req.Domain) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid domain",
+		})
+		return
+	}
+	if req.ExpireHours < 0 || req.ExpireHours > 87600 { // 10 лет максимум
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "expire_hours must be 0..87600",
+		})
+		return
 	}
 
 	res, err := s.core.GenerateTLSCert(dir, name, req.Domain, req.ExpireHours)

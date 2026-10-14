@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -18,9 +20,15 @@ type TLSCertResult struct {
 	Domain   string `json:"domain"`
 }
 
-// GenerateTLSCert создаёт самоподписанный сертификат через `xray tls cert`.
-// dir — каталог для файлов, name — базовое имя (без расширения).
-// domain — CN сертификата. expireHours — срок в часах.
+// Допустимое имя файла сертификата: буквы, цифры, дефис, подчёркивание.
+// Точка запрещена — иначе имя может выйти за пределы каталога.
+var certNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// Допустимый домен: набор меток через точку, каждая метка — буквы/цифры/дефис,
+// не начинается и не заканчивается дефисом. Длина метки 1..63.
+// Разрешены одиночные символы "*" в начале (wildcard) — но только как первая метка.
+var certDomainRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
+
 func (c *Core) GenerateTLSCert(dir, name, domain string, expireHours int) (TLSCertResult, error) {
 	if dir == "" {
 		dir = "./certs"
@@ -35,11 +43,34 @@ func (c *Core) GenerateTLSCert(dir, name, domain string, expireHours int) (TLSCe
 		expireHours = 8760 // 1 год
 	}
 
+	// Валидация входных данных.
+	if !certNameRe.MatchString(name) {
+		return TLSCertResult{}, fmt.Errorf("invalid cert name: %q", name)
+	}
+	if domain != "localhost" && !certDomainRe.MatchString(domain) {
+		return TLSCertResult{}, fmt.Errorf("invalid domain: %q", domain)
+	}
+
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return TLSCertResult{}, fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
 	base := filepath.Join(dir, name)
+
+	// Защита от traversal на случай, если валидация выше что-то пропустила.
+	// cleanDir — абсолютный путь к каталогу с завершающим разделителем.
+	// cleanBase — абсолютный путь к файлу.
+	cleanDir, err := filepath.Abs(dir)
+	if err != nil {
+		return TLSCertResult{}, fmt.Errorf("resolve dir: %w", err)
+	}
+	cleanBase, err := filepath.Abs(base)
+	if err != nil {
+		return TLSCertResult{}, fmt.Errorf("resolve base: %w", err)
+	}
+	if !strings.HasPrefix(cleanBase, cleanDir+string(os.PathSeparator)) {
+		return TLSCertResult{}, fmt.Errorf("cert path escapes directory: %q", cleanBase)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -53,10 +84,16 @@ func (c *Core) GenerateTLSCert(dir, name, domain string, expireHours int) (TLSCe
 	)
 	cmd.Stdin = nil
 	out, err := cmd.CombinedOutput()
-	_ = os.Chmod(base+".key", 0o600)
-	_ = os.Chmod(base+".crt", 0o644)
 	if err != nil {
 		return TLSCertResult{}, fmt.Errorf("xray tls cert failed: %w\n%s", err, out)
+	}
+
+	// Права выставляем только после успешной генерации.
+	if err := os.Chmod(base+".key", 0o600); err != nil {
+		return TLSCertResult{}, fmt.Errorf("chmod key: %w", err)
+	}
+	if err := os.Chmod(base+".crt", 0o644); err != nil {
+		return TLSCertResult{}, fmt.Errorf("chmod cert: %w", err)
 	}
 
 	return TLSCertResult{
