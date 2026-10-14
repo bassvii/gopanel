@@ -13,22 +13,23 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
-	"path/filepath"
-    "golang.org/x/term"
 
-	"github.com/bassvii/gopanel/internal/system"
-	"github.com/bassvii/gopanel/internal/backup"
+	"golang.org/x/term"
+
 	"github.com/bassvii/gopanel"
 	"github.com/bassvii/gopanel/internal/api"
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
+	"github.com/bassvii/gopanel/internal/backup"
 	"github.com/bassvii/gopanel/internal/config"
 	"github.com/bassvii/gopanel/internal/core/xray"
 	"github.com/bassvii/gopanel/internal/db"
 	"github.com/bassvii/gopanel/internal/stats"
+	"github.com/bassvii/gopanel/internal/system"
 )
 
 const (
@@ -343,6 +344,9 @@ func runServe(args []string) error {
 	// 11. Лимиты.
 	go stats.RunLimitEnforcer(ctx, conn, srv.ReloadSignal(), 30*time.Second, log)
 
+	// 11.5. Retention: чистка traffic и audit_log раз в сутки.
+	go db.RunRetentionLoop(ctx, conn, log)
+
 	// 12. HTTP-сервер.
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start() }()
@@ -370,18 +374,19 @@ func runServe(args []string) error {
 		return err
 	}
 }
+
 // reloadLoop слушает сигналы перезагрузки и перегенерирует конфиг Xray.
 func reloadLoop(ctx context.Context, srv *api.Server, core *xray.Core, conn *sql.DB, log *slog.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-			case <-srv.ReloadCh():
-				data, err := buildConfigFromDB(conn, log)
-				if err != nil {
-					log.Error("rebuild config failed", "err", err)
-					continue
-				}
+		case <-srv.ReloadCh():
+			data, err := buildConfigFromDB(conn, log)
+			if err != nil {
+				log.Error("rebuild config failed", "err", err)
+				continue
+			}
 			if err := core.ApplyConfig(ctx, data); err != nil {
 				log.Error("apply config failed", "err", err)
 				continue
