@@ -6,7 +6,6 @@ export interface User {
   quota_bytes: number
   used_bytes: number
   expires_at: number
-  device_limit: number
   sub_token_hash: string
   note: string
   created_at: string

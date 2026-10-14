@@ -20,16 +20,15 @@ import (
 
 // userDTO — представление пользователя для API.
 type userDTO struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Enabled     bool   `json:"enabled"`
-	QuotaBytes  int64  `json:"quota_bytes"`
-	UsedBytes   int64  `json:"used_bytes"`
-	ExpiresAt   int64  `json:"expires_at"`
-	DeviceLimit int    `json:"device_limit"`
-	Note        string `json:"note"`
-	CreatedAt   int64  `json:"created_at"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Enabled    bool   `json:"enabled"`
+	QuotaBytes int64  `json:"quota_bytes"`
+	UsedBytes  int64  `json:"used_bytes"`
+	ExpiresAt  int64  `json:"expires_at"`
+	Note       string `json:"note"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 func toUserDTO(u db.User) userDTO {
@@ -41,27 +40,25 @@ func toUserDTO(u db.User) userDTO {
 		created = u.CreatedAt.Unix()
 	}
 	return userDTO{
-		ID:          u.ID,
-		Name:        u.Name,
-		Email:       u.Email,
-		Enabled:     u.Enabled,
-		QuotaBytes:  u.QuotaBytes,
-		UsedBytes:   u.UsedBytes,
-		ExpiresAt:   expires,
-		DeviceLimit: u.DeviceLimit,
-		Note:        u.Note,
-		CreatedAt:   created,
+		ID:         u.ID,
+		Name:       u.Name,
+		Email:      u.Email,
+		Enabled:    u.Enabled,
+		QuotaBytes: u.QuotaBytes,
+		UsedBytes:  u.UsedBytes,
+		ExpiresAt:  expires,
+		Note:       u.Note,
+		CreatedAt:  created,
 	}
 }
 
 type userPayload struct {
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Enabled     bool   `json:"enabled"`
-	QuotaBytes  int64  `json:"quota_bytes"`
-	ExpiresAt   int64  `json:"expires_at"` // unix, 0 = бессрочно
-	DeviceLimit int    `json:"device_limit"`
-	Note        string `json:"note"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Enabled    bool   `json:"enabled"`
+	QuotaBytes int64  `json:"quota_bytes"`
+	ExpiresAt  int64  `json:"expires_at"` // unix, 0 = бессрочно
+	Note       string `json:"note"`
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
@@ -103,13 +100,12 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		id, err := db.CreateUser(s.db, db.User{
-			Name:        p.Name,
-			Email:       p.Email,
-			Enabled:     p.Enabled,
-			QuotaBytes:  p.QuotaBytes,
-			ExpiresAt:   expires,
-			DeviceLimit: p.DeviceLimit,
-			Note:        p.Note,
+			Name:       p.Name,
+			Email:      p.Email,
+			Enabled:    p.Enabled,
+			QuotaBytes: p.QuotaBytes,
+			ExpiresAt:  expires,
+			Note:       p.Note,
 		})
 		if err != nil {
 			s.log.Error("create user failed", "err", err)
@@ -171,7 +167,6 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 		err := db.UpdateUser(s.db, db.User{
 			ID: id, Name: p.Name, Email: p.Email, Enabled: p.Enabled,
 			QuotaBytes: p.QuotaBytes, ExpiresAt: expires,
-			DeviceLimit: p.DeviceLimit, Note: p.Note,
 		})
 		if err != nil {
 			s.log.Error("update user failed", "err", err)
@@ -378,9 +373,6 @@ func validateUserPayload(p userPayload) error {
 	}
 	if p.QuotaBytes < 0 {
 		return errors.New("quota_bytes must be non-negative")
-	}
-	if p.DeviceLimit < 0 {
-		return errors.New("device_limit must be non-negative")
 	}
 	if p.ExpiresAt < 0 {
 		return errors.New("expires_at must be non-negative")

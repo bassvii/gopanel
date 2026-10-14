@@ -225,7 +225,6 @@ function UserForm({ user, onClose, onSaved }: UserFormProps) {
     user?.quota_bytes ? String(Math.round(user.quota_bytes / 1024 / 1024 / 1024)) : '0',
   )
   const [expires, setExpires] = useState(dateInputFromUnix(user?.expires_at ?? 0))
-  const [deviceLimit, setDeviceLimit] = useState(String(user?.device_limit ?? 0))
   const [note, setNote] = useState(user?.note ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -241,7 +240,6 @@ function UserForm({ user, onClose, onSaved }: UserFormProps) {
       enabled,
       quota_bytes: Math.round(Number(quotaGB) * 1024 * 1024 * 1024),
       expires_at: unixFromDateInput(expires),
-      device_limit: Number(deviceLimit) || 0,
       note,
     }
 
@@ -300,16 +298,6 @@ function UserForm({ user, onClose, onSaved }: UserFormProps) {
             type="date"
             value={expires}
             onChange={(e) => setExpires(e.target.value)}
-            className="input"
-          />
-        </Field>
-
-        <Field label="Лимит устройств (0 — без лимита)">
-          <input
-            type="number"
-            value={deviceLimit}
-            onChange={(e) => setDeviceLimit(e.target.value)}
-            min={0}
             className="input"
           />
         </Field>

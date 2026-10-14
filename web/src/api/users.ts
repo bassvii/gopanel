@@ -12,7 +12,6 @@ export interface CreateUserInput {
   enabled: boolean
   quota_bytes?: number
   expires_at?: number
-  device_limit?: number
   note?: string
 }
 
