@@ -7,6 +7,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/bassvii/gopanel/internal/db"
 )
@@ -44,7 +46,15 @@ func Notify(conn *sql.DB, log *slog.Logger, category, severity, title, body stri
 
 // Готовые события.
 
+// LoginFailed пишет уведомление о неудачном входе, но не чаще
+// одного раза в 10 минут на (username, IP). Без throttle атакующий
+// с 1000 IP мог бы заполнить таблицу notifications за минуты.
+// См. P1-12 второго аудита.
 func LoginFailed(conn *sql.DB, log *slog.Logger, username, ip string) {
+	key := "login_failed:" + username + ":" + ip
+	if shouldThrottle(key) {
+		return
+	}
 	Notify(conn, log, CategoryAuth, SeverityWarning,
 		"Неудачный вход",
 		fmt.Sprintf("Логин: %s, IP: %s", username, ip))
@@ -84,4 +94,38 @@ func GeoUpdated(conn *sql.DB, log *slog.Logger, count int) {
 	Notify(conn, log, CategorySystem, SeverityInfo,
 		"GeoIP/GeoSite обновлены",
 		fmt.Sprintf("Файлов: %d", count))
+}
+
+// --- Throttle для частых событий ---
+
+const throttleWindow = 10 * time.Minute
+
+var (
+	throttleMu   sync.Mutex
+	throttleLast = map[string]time.Time{}
+)
+
+// shouldThrottle возвращает true, если событие с данным ключом
+// уже было за последние throttleWindow. Обновляет время при
+// успешном «пропуске» (не throttled).
+func shouldThrottle(key string) bool {
+	throttleMu.Lock()
+	defer throttleMu.Unlock()
+
+	now := time.Now()
+	if last, ok := throttleLast[key]; ok && now.Sub(last) < throttleWindow {
+		return true
+	}
+	throttleLast[key] = now
+
+	// Периодически чистим старые записи, чтобы map не рос бесконечно.
+	if len(throttleLast) > 1000 {
+		cutoff := now.Add(-throttleWindow)
+		for k, t := range throttleLast {
+			if t.Before(cutoff) {
+				delete(throttleLast, k)
+			}
+		}
+	}
+	return false
 }
