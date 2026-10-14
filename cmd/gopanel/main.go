@@ -253,6 +253,13 @@ func runServe(args []string) error {
 	}
 	defer conn.Close()
 
+	// 2.5. Geo-каталог: по умолчанию рядом с базой.
+	// Xray читает geosite/geoip оттуда (см. P2-1 третьего аудита).
+	// Устанавливаем env, если пользователь не задал свой.
+	if os.Getenv("GOPANEL_GEO_DIR") == "" {
+		_ = os.Setenv("GOPANEL_GEO_DIR", filepath.Join(filepath.Dir(cfg.DBPath), "xray"))
+	}
+
 	// 3. Контекст отмены — ДО всего, что его использует.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

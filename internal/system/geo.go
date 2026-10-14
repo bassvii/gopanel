@@ -17,12 +17,34 @@ import (
 	"time"
 )
 
-// Пути к файлам GeoIP/GeoSite.
+// Имена файлов GeoIP/GeoSite.
 const (
-	GeoDir      = "/usr/local/share/xray"
 	GeoSiteFile = "geosite.dat"
 	GeoIPFile   = "geoip.dat"
 )
+
+// DefaultGeoDir — путь по умолчанию, если GOPANEL_GEO_DIR не задан.
+//
+// ВАЖНО: этот путь должен быть доступен на запись процессу панели.
+// Под systemd unit использует ProtectSystem=strict +
+// ReadWritePaths=/var/lib/gopanel. В Docker — volume на
+// /var/lib/gopanel. Поэтому дефолт — рядом с данными, а не
+// в /usr/local/share/xray (там писать нельзя — см. P2-1 аудита).
+//
+// Историческая заметка: раньше здесь был /usr/local/share/xray.
+// При обновлении с версии < 0.1 нужно либо скопировать файлы
+// вручную, либо позволить панели скачать их заново через
+// POST /system/geo/update.
+var DefaultGeoDir = "/var/lib/gopanel/xray"
+
+// GeoDir возвращает каталог для geo-файлов: из env GOPANEL_GEO_DIR,
+// иначе DefaultGeoDir.
+func GeoDir() string {
+	if v := os.Getenv("GOPANEL_GEO_DIR"); v != "" {
+		return v
+	}
+	return DefaultGeoDir
+}
 
 // Версия geosite/geoip (Loyalsoldier/v2ray-rules-dat).
 // Синхронизируется с deploy/versions.env (GEO_TAG).
@@ -32,8 +54,8 @@ const (
 	GeoTag = "202610132205"
 
 	// SHA-256 файлов этого релиза.
-	GeoSiteSHA256 = "c5a73fbd415bb0506ecf8fa574caadc6f54a71d9308c265e97da49e4cebf8466"  // ← сюда хеш geosite.dat
-	GeoIPSHA256   = "116cc0f03d48991962f7f9cdbbcf53d45d89777f9c3cd1a663210853e5df6093"  // ← сюда хеш geoip.dat
+	GeoSiteSHA256 = "c5a73fbd415bb0506ecf8fa574caadc6f54a71d9308c265e97da49e4cebf8466" // ← сюда хеш geosite.dat
+	GeoIPSHA256   = "116cc0f03d48991962f7f9cdbbcf53d45d89777f9c3cd1a663210853e5df6093" // ← сюда хеш geoip.dat
 )
 
 // Источники файлов (Loyalsoldier), зафиксированы на GeoTag.
@@ -44,26 +66,27 @@ var (
 
 // GeoFileInfo — информация о файле.
 type GeoFileInfo struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Exists   bool   `json:"exists"`
-	SizeBytes int64 `json:"size_bytes"`
-	ModifiedAt int64 `json:"modified_at"`
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Exists     bool   `json:"exists"`
+	SizeBytes  int64  `json:"size_bytes"`
+	ModifiedAt int64  `json:"modified_at"`
 }
 
 // GeoStatus — состояние GeoIP/GeoSite.
 type GeoStatus struct {
-	Dir      string        `json:"dir"`
-	GeoSite  GeoFileInfo   `json:"geosite"`
-	GeoIP    GeoFileInfo   `json:"geoip"`
+	Dir     string      `json:"dir"`
+	GeoSite GeoFileInfo `json:"geosite"`
+	GeoIP   GeoFileInfo `json:"geoip"`
 }
 
 // GetGeoStatus возвращает информацию о файлах.
 func GetGeoStatus() GeoStatus {
+	dir := GeoDir()
 	return GeoStatus{
-		Dir:     GeoDir,
-		GeoSite: fileInfo(filepath.Join(GeoDir, GeoSiteFile), GeoSiteFile),
-		GeoIP:   fileInfo(filepath.Join(GeoDir, GeoIPFile), GeoIPFile),
+		Dir:     dir,
+		GeoSite: fileInfo(filepath.Join(dir, GeoSiteFile), GeoSiteFile),
+		GeoIP:   fileInfo(filepath.Join(dir, GeoIPFile), GeoIPFile),
 	}
 }
 
@@ -80,18 +103,19 @@ func fileInfo(path, name string) GeoFileInfo {
 // UpdateGeo скачивает свежие файлы GeoIP/GeoSite.
 // Возвращает число обновлённых файлов.
 func UpdateGeo(ctx context.Context) (int, error) {
-	if err := os.MkdirAll(GeoDir, 0o755); err != nil {
-		return 0, fmt.Errorf("mkdir %s: %w", GeoDir, err)
+	dir := GeoDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return 0, fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
 	updated := 0
 
-	if err := downloadFile(ctx, GeoSiteURL, GeoSiteSHA256, filepath.Join(GeoDir, GeoSiteFile)); err != nil {
+	if err := downloadFile(ctx, GeoSiteURL, GeoSiteSHA256, filepath.Join(dir, GeoSiteFile)); err != nil {
 		return updated, fmt.Errorf("geosite: %w", err)
 	}
 	updated++
 
-	if err := downloadFile(ctx, GeoIPURL, GeoIPSHA256, filepath.Join(GeoDir, GeoIPFile)); err != nil {
+	if err := downloadFile(ctx, GeoIPURL, GeoIPSHA256, filepath.Join(dir, GeoIPFile)); err != nil {
 		return updated, fmt.Errorf("geoip: %w", err)
 	}
 	updated++

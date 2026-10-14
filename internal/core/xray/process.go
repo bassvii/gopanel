@@ -94,6 +94,13 @@ func (p *Process) Start(ctx context.Context) error {
 	// ядро пошлёт Xray SIGTERM и он сам остановится, освободив
 	// порты. На других ОС — nil (без эффекта).
 	cmd.SysProcAttr = sysProcAttr()
+	// Xray по умолчанию ищет geosite.dat/geoip.dat в
+	// /usr/local/share/xray. Мы храним их рядом с данными панели
+	// (см. P2-1 третьего аудита) — сообщаем Xray через переменную
+	// XRAY_LOCATION_ASSET. Плюс пробрасываем остальное окружение.
+	cmd.Env = append(os.Environ(),
+		"XRAY_LOCATION_ASSET="+xrayAssetDir(),
+	)
 
 	if err := cmd.Start(); err != nil {
 		cancel()
@@ -216,4 +223,19 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// xrayAssetDir возвращает каталог, в котором Xray ищет geosite.dat
+// и geoip.dat. Берётся из GOPANEL_GEO_DIR, если задан, иначе —
+// <каталог базы>/xray. См. P2-1 третьего аудита.
+//
+// Не импортируем system, чтобы не создавать цикл: xray → system,
+// а system не должен зависеть от xray.
+func xrayAssetDir() string {
+	if v := os.Getenv("GOPANEL_GEO_DIR"); v != "" {
+		return v
+	}
+	// Резервный вариант. Если dbPath не известен на этом уровне,
+	// используем тот же дефолт, что и system.DefaultGeoDir.
+	return "/var/lib/gopanel/xray"
 }
