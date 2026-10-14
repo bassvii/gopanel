@@ -49,5 +49,5 @@ func generateHysteria2(in Input) (string, error) {
 
 	remark := url.PathEscape(in.Remark)
 	return fmt.Sprintf("hysteria2://%s@%s:%d/?%s#%s",
-		url.QueryEscape(auth), hostForURL(in.Address), in.Port, q.Encode(), remark), nil
+		url.PathEscape(auth), hostForURL(in.Address), in.Port, q.Encode(), remark), nil
 }

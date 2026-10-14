@@ -4,8 +4,8 @@ package links
 
 import (
 	"fmt"
+	"net"
 	"net/url"
-	"strconv"
 )
 
 // generateVLESS собирает vless:// ссылку.
@@ -131,16 +131,11 @@ func hostForURL(host string) string {
 }
 
 func isIPv6(host string) bool {
-	// Грубая проверка: есть двоеточие и нет точки.
-	for i := 0; i < len(host); i++ {
-		if host[i] == ':' {
-			return true
-		}
-		if host[i] == '.' {
-			return false
-		}
-	}
-	return false
+	// net.ParseIP корректно различает IPv4 и IPv6, включая
+	// IPv4-mapped (::ffff:1.2.3.4). Для IPv4-mapped возвращаем
+	// false — в URL он должен быть как обычный IPv4.
+	ip := net.ParseIP(host)
+	return ip != nil && ip.To4() == nil
 }
 
 func joinAny(a []any) string {
@@ -155,5 +150,3 @@ func joinAny(a []any) string {
 	}
 	return out
 }
-
-var _ = strconv.Itoa // зарезервировано

@@ -5,6 +5,7 @@ package links
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 )
 
 // generateShadowsocks собирает ss:// ссылку.
@@ -33,5 +34,5 @@ func generateShadowsocks(in Input) (string, error) {
 
 	userinfo := base64.RawURLEncoding.EncodeToString([]byte(method + ":" + password))
 	return fmt.Sprintf("ss://%s@%s:%d#%s",
-		userinfo, hostForURL(in.Address), in.Port, in.Remark), nil
+		userinfo, hostForURL(in.Address), in.Port, url.PathEscape(in.Remark)), nil
 }
