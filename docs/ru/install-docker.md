@@ -17,6 +17,7 @@
 - [Управление](#управление)
 - [Обновление](#обновление)
 - [Резервные копии](#резервные-копии)
+- [Healthcheck](#healthcheck)
 - [Удаление](#удаление)
 - [Диагностика](#диагностика)
 
@@ -46,18 +47,18 @@ docker run -d \
     -v gopanel-data:/var/lib/gopanel \
     gopanel:latest
 
-# Создать администратора (спросит пароль интерактивно)
+# 4. Создать администратора (спросит пароль интерактивно)
 docker exec -it gopanel gopanel admin create \
     --db /var/lib/gopanel/gopanel.db \
     --user admin
-    
-# 4. Проверить логи
+
+# 5. Проверить логи
 docker logs gopanel
 
-# 5. Открыть панель
+# 6. Открыть панель
 # http://127.0.0.1:44559/BASE_PATH/
 # BASE_PATH — из файла /var/lib/gopanel/base_path внутри контейнера:
-# docker exec gopanel cat /var/lib/gopanel/base_path
+#   docker exec gopanel cat /var/lib/gopanel/base_path
 ```
 
 ---
@@ -141,10 +142,15 @@ docker run -d \
     gopanel:latest
 ```
 
-# Создать администратора (спросит пароль интерактивно)
-```docker exec -it gopanel gopanel admin create \
+### Создание администратора
+
+```bash
+docker exec -it gopanel gopanel admin create \
     --db /var/lib/gopanel/gopanel.db \
-    --user admin```
+    --user admin
+```
+
+Пароль вводится интерактивно (дважды, без эха). Флаг `--password` удалён в v0.1 — он попадал в `ps` и shell history.
 
 ### Флаги
 
@@ -182,7 +188,6 @@ docker logs gopanel
 Ожидаемо:
 
 ```text
-level=INFO msg="first admin created from env" username=admin id=1
 level=INFO msg="xray started" pid=22 config=/tmp/gopanel-xray.json
 level=INFO msg="frontend embedded"
 level=INFO msg="admin listener started" addr=[::]:44559
@@ -192,11 +197,12 @@ level=INFO msg="admin listener started" addr=[::]:44559
 
 ```bash
 docker exec gopanel cat /var/lib/gopanel/base_path
+```
 
 Проверьте, что панель отвечает:
 
 ```bash
-BASE=/7fee39ed0cc3e93666be46446375cffc
+BASE=$(docker exec gopanel cat /var/lib/gopanel/base_path)
 
 curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:44559$BASE/me"
 # → 401
@@ -237,7 +243,7 @@ services:
       - "127.0.0.1:44559:44559"
       # Для инбаундов раскомментируйте и укажите свои порты:
       # - "443:443"
-      # - "8443:8443"
+      # - "8443:8443/udp"
     environment:
       GOPANEL_LISTEN: "0.0.0.0"
       GOPANEL_PORT: "44559"
@@ -250,15 +256,6 @@ volumes:
   gopanel-data:
 ```
 
-### Создание администратора
-
-После первого запуска создайте администратора:
-
-```bash
-docker compose exec gopanel gopanel admin create \
-    --db /var/lib/gopanel/gopanel.db \
-    --user admin
-
 ### 2. Запуск
 
 ```bash
@@ -269,7 +266,15 @@ docker compose up -d
 
 Первый `build` скачает репозиторий и соберёт образ.
 
-### 3. Проверка
+### 3. Создание администратора
+
+```bash
+docker compose exec gopanel gopanel admin create \
+    --db /var/lib/gopanel/gopanel.db \
+    --user admin
+```
+
+### 4. Проверка
 
 ```bash
 docker compose ps
@@ -278,8 +283,7 @@ docker compose ps
 docker compose logs -f gopanel
 ```
 
-
-### 4. Управление
+### 5. Управление
 
 ```bash
 docker compose stop            # остановить
@@ -290,7 +294,7 @@ docker compose ps              # статус
 docker compose exec gopanel sh # войти внутрь
 ```
 
-### 5. Обновление
+### 6. Обновление
 
 ```bash
 docker compose build --no-cache
@@ -305,7 +309,7 @@ docker compose up -d --force-recreate
 
 Если вы создаёте инбаунды в панели — их порты должны быть проброшены из контейнера на хост.
 
-Пример: VLESS на порту 443, Shadowsocks на 8388.
+Пример: VLESS на порту 443, Hysteria2 на 8443 (UDP).
 
 ### Через `docker run`
 
@@ -314,7 +318,7 @@ docker run -d \
     --name gopanel \
     -p 127.0.0.1:44559:44559 \
     -p 443:443 \
-    -p 8388:8388 \
+    -p 8443:8443/udp \
     ... \
     gopanel:latest
 ```
@@ -325,10 +329,13 @@ docker run -d \
 ports:
   - "127.0.0.1:44559:44559"
   - "443:443"
-  - "8388:8388"
+  - "8443:8443/udp"
 ```
 
-**Важно:** панель должна создавать инбаунды на тех же портах, что проброшены. Если в панели инбаунд на 443, но в Docker проброшен только 44559 — клиенты не подключатся.
+**Важно:**
+
+- Панель должна создавать инбаунды на тех же портах, что проброшены.
+- Для UDP (Hysteria2, TUIC) — обязателен суффикс `/udp`. Без него Docker пробросит только TCP.
 
 ### Порт 443 и права
 
@@ -340,6 +347,22 @@ Xray внутри контейнера запускается от неприв�
 
 ```bash
 docker run ... --cap-add=NET_BIND_SERVICE ... gopanel:latest
+```
+
+В `docker-compose.yml`:
+
+```yaml
+cap_add:
+  - NET_BIND_SERVICE
+```
+
+**Альтернатива** (проще и безопаснее) — использовать внутри контейнера порт > 1024, а снаружи пробрасывать на 443:
+
+```bash
+docker run ... -p 443:8443 ...
+```
+
+И в панели создавать инбаунд на порту **8443**.
 
 ---
 
@@ -381,12 +404,12 @@ docker exec -it gopanel sh
 ### Сменить пароль админа
 
 ```bash
-docker exec gopanel /usr/local/bin/gopanel reset-password \
+docker exec -it gopanel /usr/local/bin/gopanel reset-password \
     --db /var/lib/gopanel/gopanel.db \
-    --user admin --password 'новый-пароль'
+    --user admin
 ```
 
-Сбрасывает пароль, отключает 2FA, завершает все сессии.
+Пароль вводится интерактивно. Сбрасывает пароль, отключает 2FA, завершает все сессии.
 
 ---
 
@@ -453,7 +476,7 @@ sqlite3 ./backup-$(date +%Y%m%d).db ".tables"
 
 ### Через UI
 
-**Настройки → Резервные копии → Скачать бэкап** — скачивает дамп через браузер.
+**Настройки → Резервные копии → Скачать бэкап**. Требуется пароль администратора (защита от украденной сессии).
 
 ### Восстановление
 
@@ -486,7 +509,11 @@ chown 999:999 /data/gopanel.db
 exit
 ```
 
-`999:999` — UID/GID пользователя `gopanel` внутри контейнера.
+`999:999` — UID/GID пользователя `gopanel` внутри контейнера. Проверить можно так:
+
+```bash
+docker exec gopanel id gopanel
+```
 
 ### Автоматический бэкап (cron на хосте)
 
@@ -498,6 +525,29 @@ sudo crontab -e
 0 3 * * * docker exec gopanel /usr/local/bin/gopanel backup --db /var/lib/gopanel/gopanel.db --out /var/lib/gopanel/backup-auto.db && docker cp gopanel:/var/lib/gopanel/backup-auto.db /backups/gopanel-$(date +\%Y\%m\%d).db
 30 3 * * * find /backups -name "gopanel-*.db" -mtime +30 -delete
 ```
+
+---
+
+## Healthcheck
+
+Образ содержит встроенный `HEALTHCHECK`, который каждые 30 секунд
+проверяет `GET /healthz`. Если панель не отвечает — контейнер
+становится `unhealthy`.
+
+Проверить статус:
+
+```bash
+docker inspect --format='{{.State.Health.Status}}' gopanel
+# → healthy
+```
+
+`/healthz` — публичный эндпоинт (без авторизации), отвечает
+`200 OK` с телом `ok`. Не отдаёт версий, путей и другой информации.
+
+При `--restart unless-stopped` Docker **не** перезапускает unhealthy
+контейнер автоматически — нужно использовать `--restart always`
+или внешний watch (например, `autoheal`). По умолчанию
+`unless-stopped` реагирует только на смерть процесса.
 
 ---
 
@@ -548,7 +598,7 @@ docker logs gopanel
 | `xray binary not found` | Образ собран без Xray | Пересоберите образ из свежего Dockerfile |
 | `bind: address already in use` | Порт занят | Смените `-p` или убейте процесс |
 | `database is locked` | Том смонтирован неверно | Проверьте `-v gopanel-data:/var/lib/gopanel` |
-| `permission denied` на `/var/lib/gopanel` | Права тома | `docker run ... --user $(id -u):$(id -g)` или `chown` внутри |
+| `permission denied` на `/var/lib/gopanel` | Права тома | `chown` внутри или `--user` |
 
 ### Панель не отвечает
 
@@ -572,7 +622,7 @@ ssh -L 44559:127.0.0.1:44559 user@server
 Проверьте `BASE_PATH`:
 
 ```bash
-docker logs gopanel 2>&1 | grep "admin listener started"
+docker exec gopanel cat /var/lib/gopanel/base_path
 ```
 
 ### `npm ci` при сборке падает с ETIMEDOUT
@@ -591,16 +641,27 @@ ENV NODE_OPTIONS=--dns-result-order=ipv4first
 
 **Причина:** порты инбаундов не проброшены.
 
-**Решение:** добавьте `-p <port>:<port>` в `docker run` или в `docker-compose.yml`.
+**Решение:** добавьте `-p <port>:<port>` (или `/udp`) в `docker run` или в `docker-compose.yml`.
 
 ### Xray не может занять порт 443
 
-Внутри контейнера Xray работает от непривилегированного пользователя. Порт < 1024 требует `CAP_NET_BIND_SERVICE`. Дать её можно двумя способами:
+Внутри контейнера Xray работает от непривилегированного пользователя. Порт < 1024 требует `CAP_NET_BIND_SERVICE`.
 
 **Решение 1 (рекомендую):** пробросить порт > 1024 внутри контейнера на 443 снаружи.
 
 ```bash
 docker run ... -p 443:8443 ...
+```
+
+Инбаунд в панели создавайте на порту **8443**.
+
+**Решение 2:** дать capability контейнеру.
+
+```bash
+docker run ... --cap-add=NET_BIND_SERVICE ...
+```
+
+**Не делайте этого:** `setcap` на бинарник Xray в Dockerfile — в контейнере file capabilities не действуют без `--cap-add`.
 
 ### Панель перезапускается циклически
 
@@ -615,4 +676,12 @@ docker inspect gopanel | grep -i "restart"
 docker exec gopanel cat /tmp/gopanel-xray.json | head -50
 docker exec gopanel xray run -test -c /tmp/gopanel-xray.json
 ```
+
+### Контейнер unhealthy
+
+```bash
+docker inspect --format='{{json .State.Health}}' gopanel | python3 -m json.tool
+docker exec gopanel wget -qO- http://127.0.0.1:44559/healthz
 ```
+
+Если `/healthz` не отвечает — панель не запустилась. Смотрите логи.

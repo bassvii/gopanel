@@ -15,14 +15,14 @@ import (
 )
 
 type Config struct {
-	DBPath   string `json:"db_path"`
-	Listen   string `json:"listen"`
-	Port     int    `json:"port"`
-	BasePath string `json:"base_path"`
-	XrayBin  string `json:"xray_bin"`
-	LogLevel string `json:"log_level"`
-	XrayConfigPath string `json:"xray_config_path"`
-	AllowNonLoopback bool `json:"allow_non_loopback"`
+	DBPath           string `json:"db_path"`
+	Listen           string `json:"listen"`
+	Port             int    `json:"port"`
+	BasePath         string `json:"base_path"`
+	XrayBin          string `json:"xray_bin"`
+	LogLevel         string `json:"log_level"`
+	XrayConfigPath   string `json:"xray_config_path"`
+	AllowNonLoopback bool   `json:"allow_non_loopback"`
 	// SecureCookies выставляет флаг Secure на cookie сессии.
 	// Включать, когда панель за HTTPS-прокси (иначе cookie уйдёт
 	// и по HTTP). Для loopback по умолчанию false.
@@ -38,13 +38,13 @@ type Config struct {
 // Default возвращает конфиг со значениями по умолчанию.
 func Default() Config {
 	return Config{
-		DBPath:   "./gopanel.db",
-		Listen:   "127.0.0.1",
-		Port:     0,
-		BasePath: "",
-		XrayBin:  "/usr/local/bin/xray",
-		LogLevel: "info",
-		XrayConfigPath: "/tmp/gopanel-xray.json",
+		DBPath:           "./gopanel.db",
+		Listen:           "127.0.0.1",
+		Port:             0,
+		BasePath:         "",
+		XrayBin:          "/usr/local/bin/xray",
+		LogLevel:         "info",
+		XrayConfigPath:   "/tmp/gopanel-xray.json",
 		AllowNonLoopback: false,
 	}
 }
@@ -187,10 +187,6 @@ func applyFlags(cfg *Config, args []string) error {
 	// как «принимаем, но игнорируем» — иначе flag.Parse упадёт.
 	var _unused string
 	fs.StringVar(&_unused, "config", "", "путь к JSON-конфигу (обрабатывается отдельно)")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
 
 	if err := fs.Parse(args); err != nil {
 		return err
