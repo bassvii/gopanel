@@ -4,8 +4,8 @@ package api
 
 import (
 	"encoding/json"
-	"net/http"
 	"errors"
+	"net/http"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -132,7 +132,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := auth.DeleteSession(s.db, id); err != nil {
+	if err := auth.DeleteSessionForAdmin(s.db, sess.AdminID, id); err != nil {
+		if errors.Is(err, auth.ErrSessionNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

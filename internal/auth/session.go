@@ -125,9 +125,34 @@ func TouchSession(conn *sql.DB, id string) error {
 }
 
 // DeleteSession удаляет сессию по её ID (хешу токена).
+// Используется внутри auth (истечение сессии и т.п.).
 func DeleteSession(conn *sql.DB, id string) error {
 	_, err := conn.Exec(`DELETE FROM sessions WHERE id = ?`, id)
 	return err
+}
+
+// DeleteSessionForAdmin удаляет сессию по ID, только если она
+// принадлежит указанному админу. Возвращает ErrSessionNotFound,
+// если сессии нет или она чужая — вызывающая сторона не должна
+// различать эти случаи (защита от IDOR).
+//
+// См. P1-7 второго аудита.
+func DeleteSessionForAdmin(conn *sql.DB, adminID int64, sessionID string) error {
+	res, err := conn.Exec(
+		`DELETE FROM sessions WHERE id = ? AND admin_id = ?`,
+		sessionID, adminID,
+	)
+	if err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
 }
 
 // DeleteAllSessionsForAdmin завершает все сессии администратора.
