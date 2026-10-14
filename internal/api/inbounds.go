@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -251,6 +252,12 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 	}
 	if p.Port < 1 || p.Port > 65535 {
 		return errors.New("port must be 1..65535")
+	}
+	// listen должен быть валидным IP-адресом. Xray проглотит
+	// произвольную строку, но упадёт на `xray -test` или при
+	// резолве. Ловим раньше — в момент сохранения инбаунда.
+	if p.Listen != "" && net.ParseIP(p.Listen) == nil {
+		return fmt.Errorf("listen %q не является IP-адресом", p.Listen)
 	}
 
 	// Запрет на порт админки и StatsService.

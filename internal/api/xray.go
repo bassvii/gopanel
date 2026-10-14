@@ -5,8 +5,8 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"net/http"
 	"encoding/json"
+	"net/http"
 	"path/filepath"
 	"regexp"
 
@@ -39,7 +39,7 @@ func (s *Server) handleX25519(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Error("x25519 generation failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
+			"error": "internal error",
 		})
 		return
 	}
@@ -102,7 +102,7 @@ func (s *Server) handleVlessEnc(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Error("vlessenc generation failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
+			"error": "internal error",
 		})
 		return
 	}
@@ -193,7 +193,7 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Error("tls cert generation failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
+			"error": "internal error",
 		})
 		return
 	}
