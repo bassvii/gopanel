@@ -61,11 +61,15 @@ func VerifyTOTP(secret, code string) bool {
 }
 
 // SaveTOTPSecret сохраняет секрет у администратора (включение 2FA).
-// SaveTOTPSecret сохраняет секрет у администратора (включение 2FA).
+// Секрет шифруется ключом из auth.SecretKey() перед записью.
 func SaveTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
-	_, err := conn.Exec(
+	enc, err := EncryptSecret(SecretKey(), secret)
+	if err != nil {
+		return fmt.Errorf("encrypt totp secret: %w", err)
+	}
+	_, err = conn.Exec(
 		`UPDATE admins SET totp_secret = ? WHERE id = ?`,
-		secret, adminID,
+		enc, adminID,
 	)
 	if err != nil {
 		return fmt.Errorf("save totp secret: %w", err)
@@ -75,10 +79,15 @@ func SaveTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
 
 // SavePendingTOTPSecret сохраняет «черновой» секрет, ещё не подтверждённый
 // кодом из приложения. Не включается в totp_secret и не влияет на вход.
+// Секрет шифруется перед записью.
 func SavePendingTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
-	_, err := conn.Exec(
+	enc, err := EncryptSecret(SecretKey(), secret)
+	if err != nil {
+		return fmt.Errorf("encrypt pending totp secret: %w", err)
+	}
+	_, err = conn.Exec(
 		`UPDATE admins SET totp_pending_secret = ? WHERE id = ?`,
-		secret, adminID,
+		enc, adminID,
 	)
 	if err != nil {
 		return fmt.Errorf("save pending totp secret: %w", err)
@@ -87,16 +96,25 @@ func SavePendingTOTPSecret(conn *sql.DB, adminID int64, secret string) error {
 }
 
 // GetPendingTOTPSecret возвращает черновой секрет (или пустую строку).
+// Значение расшифровывается перед возвратом; наружу функция отдаёт
+// plain text, хотя в БД хранится enc:v1:...
 func GetPendingTOTPSecret(conn *sql.DB, adminID int64) (string, error) {
-	var s string
+	var raw string
 	err := conn.QueryRow(
 		`SELECT totp_pending_secret FROM admins WHERE id = ?`,
 		adminID,
-	).Scan(&s)
+	).Scan(&raw)
 	if err != nil {
 		return "", fmt.Errorf("get pending totp secret: %w", err)
 	}
-	return s, nil
+	if raw == "" {
+		return "", nil
+	}
+	plain, err := DecryptSecret(SecretKey(), raw)
+	if err != nil {
+		return "", fmt.Errorf("decrypt pending totp secret: %w", err)
+	}
+	return plain, nil
 }
 
 // ActivatePendingTOTP переносит черновой секрет в активный и очищает pending.

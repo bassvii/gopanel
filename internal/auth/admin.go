@@ -13,6 +13,33 @@ import (
 // ErrNoAdmins возвращается, когда в базе ещё нет ни одного админа.
 var ErrNoAdmins = errors.New("no admins in database")
 
+// decryptTOTPFields расшифровывает totp_secret и totp_pending_secret
+// в структуре Admin. Пустые строки остаются пустыми. Значения без
+// префикса enc:v1: (старые, до миграции) возвращаются как есть —
+// миграция зашифрует их отдельным проходом при старте.
+func decryptTOTPFields(a *Admin) error {
+	if a.TOTPSecret != "" {
+		plain, err := DecryptSecret(SecretKey(), a.TOTPSecret)
+		if err != nil && !errors.Is(err, ErrNotEncrypted) {
+			return fmt.Errorf("decrypt totp_secret: %w", err)
+		}
+		if err == nil {
+			a.TOTPSecret = plain
+		}
+		// если ErrNotEncrypted — оставляем как есть (старый открытый текст)
+	}
+	if a.TOTPPendingSecret != "" {
+		plain, err := DecryptSecret(SecretKey(), a.TOTPPendingSecret)
+		if err != nil && !errors.Is(err, ErrNotEncrypted) {
+			return fmt.Errorf("decrypt totp_pending_secret: %w", err)
+		}
+		if err == nil {
+			a.TOTPPendingSecret = plain
+		}
+	}
+	return nil
+}
+
 // Admin — запись администратора.
 type Admin struct {
 	ID                int64
@@ -76,6 +103,9 @@ func GetAdminByUsername(conn *sql.DB, username string) (Admin, error) {
 	if err != nil {
 		return a, fmt.Errorf("get admin: %w", err)
 	}
+	if err := decryptTOTPFields(&a); err != nil {
+		return a, err
+	}
 	a.CreatedAt = time.Unix(createdAt, 0)
 	return a, nil
 }
@@ -114,6 +144,9 @@ func GetAdminByID(conn *sql.DB, id int64) (Admin, error) {
 	}
 	if err != nil {
 		return a, fmt.Errorf("get admin: %w", err)
+	}
+	if err := decryptTOTPFields(&a); err != nil {
+		return a, err
 	}
 	a.CreatedAt = time.Unix(createdAt, 0)
 	return a, nil

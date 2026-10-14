@@ -3,9 +3,7 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/bassvii/gopanel/internal/audit"
@@ -40,7 +38,7 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admin, err := getAdminByID(s.db, sess.AdminID)
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
 	if err != nil {
 		s.log.Error("get admin failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -176,7 +174,7 @@ func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	admin, err := getAdminByID(s.db, sess.AdminID)
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
 	if err != nil {
 		s.log.Error("get admin failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -185,18 +183,4 @@ func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"enabled": admin.TOTPSecret != "",
 	})
-}
-
-// getAdminByID — вспомогательная: получить админа по ID.
-func getAdminByID(conn *sql.DB, id int64) (auth.Admin, error) {
-	var a auth.Admin
-	err := conn.QueryRow(
-		`SELECT id, username, password_hash, totp_secret, totp_pending_secret, role
-		 FROM admins WHERE id = ?`,
-		id,
-	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.TOTPSecret, &a.TOTPPendingSecret, &a.Role)
-	if errors.Is(err, sql.ErrNoRows) {
-		return a, sql.ErrNoRows
-	}
-	return a, err
 }
