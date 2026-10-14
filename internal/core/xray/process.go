@@ -90,6 +90,10 @@ func (p *Process) Start(ctx context.Context) error {
 	cmd := exec.CommandContext(runCtx, p.binPath, "run", "-c", p.configPath)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
+	// На Linux Pdeathsig=SIGTERM: если панель упадёт нештатно,
+	// ядро пошлёт Xray SIGTERM и он сам остановится, освободив
+	// порты. На других ОС — nil (без эффекта).
+	cmd.SysProcAttr = sysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		cancel()
