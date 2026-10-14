@@ -20,6 +20,22 @@ GOPANEL_REPO="${GOPANEL_REPO:-https://github.com/bassvii/gopanel}"
 XRAY_REPO="https://github.com/XTLS/Xray-core"
 GEO_DIR="/usr/local/share/xray"
 
+# Версии и хеши Xray — в одном файле рядом со скриптом.
+# Если файла нет — install.sh отказывается работать:
+# без хешей мы не можем гарантировать подлинность бинарника.
+VERSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/versions.env"
+if [[ ! -r "$VERSIONS_FILE" ]]; then
+    echo "error: $VERSIONS_FILE не найден или недоступен" >&2
+    echo "       ожидается рядом с install.sh в deploy/" >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+source "$VERSIONS_FILE"
+
+: "${XRAY_VERSION:?XRAY_VERSION не задан в versions.env}"
+: "${XRAY_SHA256_AMD64:?XRAY_SHA256_AMD64 не задан в versions.env}"
+: "${XRAY_SHA256_ARM64:?XRAY_SHA256_ARM64 не задан в versions.env}"
+
 # --- Цвета ---
 
 RED=$'\033[0;31m'
@@ -72,22 +88,44 @@ install_deps() {
 
 install_xray() {
     if [[ -x "$XRAY_BIN" ]]; then
-        log "Xray уже установлен: $($XRAY_BIN version | head -1)"
+        local installed
+        installed=$("$XRAY_BIN" version 2>/dev/null | head -1 || echo "unknown")
+        log "Xray уже установлен: $installed"
+        log "ожидаемая версия: ${XRAY_VERSION}"
         # Снимаем возможный старый setcap, если он остался от прошлых версий.
         setcap -r "$XRAY_BIN" 2>/dev/null || true
     else
-        log "устанавливаю Xray-core"
+        log "устанавливаю Xray-core ${XRAY_VERSION}"
 
         local tmp
         tmp=$(mktemp -d)
         trap 'rm -rf "$tmp"' RETURN
 
-        local url="${XRAY_REPO}/releases/latest/download/Xray-linux-64.zip"
+        # URL и ожидаемый хеш зависят от архитектуры.
+        # Версия зафиксирована в versions.env, не latest.
+        local url expected_sha
         if [[ "$ARCH" == "arm64" ]]; then
-            url="${XRAY_REPO}/releases/latest/download/Xray-linux-arm64-v8a.zip"
+            url="${XRAY_REPO}/releases/download/${XRAY_VERSION}/Xray-linux-arm64-v8a.zip"
+            expected_sha="$XRAY_SHA256_ARM64"
+        else
+            url="${XRAY_REPO}/releases/download/${XRAY_VERSION}/Xray-linux-64.zip"
+            expected_sha="$XRAY_SHA256_AMD64"
         fi
 
+        log "скачиваю $url"
         curl -fsSL -o "$tmp/xray.zip" "$url"
+
+        # Проверка контрольной суммы ДО распаковки.
+        # При несовпадении — ничего не устанавливаем.
+        log "проверяю SHA-256"
+        if ! echo "${expected_sha}  $tmp/xray.zip" | sha256sum -c - >/dev/null 2>&1; then
+            actual_sha=$(sha256sum "$tmp/xray.zip" | awk '{print $1}')
+            die "SHA-256 не совпал!
+       ожидалось: ${expected_sha}
+       получено:  ${actual_sha}
+       Файл повреждён или подменён. Установка прервана."
+        fi
+
         unzip -q -o "$tmp/xray.zip" -d "$tmp/xray"
 
         install -m 0755 "$tmp/xray/xray" "$XRAY_BIN"
@@ -276,6 +314,7 @@ print_info() {
 ${GREEN}Установка завершена.${NC}
 
   Панель работает на 127.0.0.1:${port}, base_path: ${base}
+  Xray: $("$XRAY_BIN" version 2>/dev/null | head -1 || echo "не установлен")
 
   Открыть панель (через SSH-туннель):
 
