@@ -80,9 +80,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if adminLocked {
-		w.Header().Set("Retry-After", strconv.Itoa(int(adminWait.Seconds())))
-		writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
-		return
+		// Исключение для владельца: если админ уже прислал валидный
+		// TOTP-код, lockout по аккаунту обходится. Это защищает от DoS
+		// (P1-9 аудита): атакующий не может надолго заблокировать
+		// владельца, зная только его логин. Брутфорсер без TOTP
+		// по-прежнему застревает — сам факт наличия кода не помогает,
+		// он должен быть валидным.
+		bypass := admin.TOTPSecret != "" && req.TOTPCode != "" &&
+			auth.VerifyTOTP(admin.TOTPSecret, req.TOTPCode)
+		if !bypass {
+			w.Header().Set("Retry-After", strconv.Itoa(int(adminWait.Seconds())))
+			writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
+			return
+		}
 	}
 
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
