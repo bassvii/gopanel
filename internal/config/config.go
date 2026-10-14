@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config — все настройки панели.
@@ -45,10 +46,23 @@ func Default() Config {
 func Load(path string, args []string) (Config, error) {
 	cfg := Default()
 
-	// 1. Файл конфигурации.
+	// Разбираем --config из args до всего остального: этот флаг
+	// указывает, откуда читать файл, и должен быть известен заранее.
+	// Приоритет: --config > env GOPANEL_CONFIG > path из вызова.
+	fileFromFlags, err := extractConfigFlag(args)
+	if err != nil {
+		return cfg, err
+	}
+	if fileFromFlags != "" {
+		path = fileFromFlags
+	} else if path == "" {
+		path = os.Getenv("GOPANEL_CONFIG")
+	}
+
+	// 1. Файл конфигурации (если путь известен).
 	if path != "" {
 		if err := loadFile(path, &cfg); err != nil {
-			return cfg, fmt.Errorf("config file: %w", err)
+			return cfg, fmt.Errorf("config file %s: %w", path, err)
 		}
 	}
 
@@ -61,6 +75,28 @@ func Load(path string, args []string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// extractConfigFlag вытаскивает значение --config / -config из args,
+// не мешая остальным флагам. Возвращает "" если флага нет.
+// Поддерживает формы: --config PATH, --config=PATH, -config PATH.
+func extractConfigFlag(args []string) (string, error) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--config" || a == "-config" {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("--config requires a value")
+			}
+			return args[i+1], nil
+		}
+		if strings.HasPrefix(a, "--config=") {
+			return strings.TrimPrefix(a, "--config="), nil
+		}
+		if strings.HasPrefix(a, "-config=") {
+			return strings.TrimPrefix(a, "-config="), nil
+		}
+	}
+	return "", nil
 }
 
 func loadFile(path string, cfg *Config) error {
@@ -107,17 +143,23 @@ func applyFlags(cfg *Config, args []string) error {
 	fs := flag.NewFlagSet("gopanel", flag.ContinueOnError)
 
 	fs.StringVar(&cfg.DBPath, "db", cfg.DBPath, "путь к файлу SQLite")
+	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, "адрес для админского listener (по умолчанию 127.0.0.1)")
 	fs.IntVar(&cfg.Port, "port", cfg.Port, "порт админского listener (0 — случайный)")
 	fs.StringVar(&cfg.BasePath, "base-path", cfg.BasePath, "секретный базовый путь")
 	fs.StringVar(&cfg.XrayBin, "xray-bin", cfg.XrayBin, "путь к бинарнику Xray")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "уровень логов: debug, info, warn, error")
 	fs.StringVar(&cfg.XrayConfigPath, "xray-config", cfg.XrayConfigPath, "путь к файлу конфига Xray")
 
+	// --config уже разобран выше (extractConfigFlag), регистрируем его
+	// как «принимаем, но игнорируем» — иначе flag.Parse упадёт.
+	var _unused string
+	fs.StringVar(&_unused, "config", "", "путь к JSON-конфигу (обрабатывается отдельно)")
+
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if cfg.Port < 0 || cfg.Port > 65535 {
-        return errors.New("port must be 0..65535")
+		return errors.New("port must be 0..65535")
 	}
 	return nil
 }

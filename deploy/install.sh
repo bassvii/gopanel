@@ -163,6 +163,20 @@ setup_dirs() {
     log "создаю каталоги"
     install -d -m 0750 -o "$GOPANEL_USER" -g "$GOPANEL_USER" "$GOPANEL_DIR"
     install -d -m 0755 "$GOPANEL_CONFIG_DIR"
+
+    # Пустой конфиг: панель стартует с дефолтами, всё можно
+    # переопределить через env или флаги. Класть сюда db_path/listen
+    # не обязательно — они всё равно переопределяются из --db
+    # в ExecStart и из env.
+    if [[ ! -f "$GOPANEL_CONFIG" ]]; then
+        cat > "$GOPANEL_CONFIG" <<'JSON'
+{
+  "listen": "127.0.0.1",
+  "log_level": "info"
+}
+JSON
+        chmod 0644 "$GOPANEL_CONFIG"
+    fi
 }
 
 init_db() {
@@ -189,7 +203,7 @@ After=network.target
 Type=simple
 User=$GOPANEL_USER
 Group=$GOPANEL_USER
-ExecStart=$GOPANEL_BIN run --db $GOPANEL_DB
+ExecStart=$GOPANEL_BIN run --config $GOPANEL_CONFIG --db $GOPANEL_DB
 Restart=on-failure
 RestartSec=5
 

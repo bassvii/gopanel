@@ -74,8 +74,9 @@ func runAdmin(args []string) error {
 	fs := flag.NewFlagSet("admin create", flag.ContinueOnError)
 	var (
 		user     = fs.String("user", "", "имя администратора")
-		password = fs.String("password", "", "пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD)")
+		password = fs.String("password", "", "пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD или интерактивно)")
 		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+		cfgPath  = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
 	)
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -97,7 +98,7 @@ func runAdmin(args []string) error {
 		*password = p
 	}
 
-	cfg, err := config.Load("", nil)
+	cfg, err := config.Load(*cfgPath, nil)
 	if err != nil {
 		return err
 	}
@@ -125,8 +126,9 @@ func runResetPassword(args []string) error {
 	fs := flag.NewFlagSet("reset-password", flag.ContinueOnError)
 	var (
 		user     = fs.String("user", "", "имя администратора")
-		password = fs.String("password", "", "новый пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD)")
+		password = fs.String("password", "", "новый пароль (если пусто — из env GOPANEL_ADMIN_PASSWORD или интерактивно)")
 		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+		cfgPath  = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -146,7 +148,7 @@ func runResetPassword(args []string) error {
 		*password = p
 	}
 
-	cfg, err := config.Load("", nil)
+	cfg, err := config.Load(*cfgPath, nil)
 	if err != nil {
 		return err
 	}
@@ -177,12 +179,13 @@ func runConfig(args []string) error {
 		port     = fs.Int("port", 0, "новый порт админки (0 — не менять)")
 		basePath = fs.String("base-path", "", "новый base path (пусто — не менять)")
 		dbPath   = fs.String("db", "", "путь к БД (если пусто — из конфига)")
+		cfgPath  = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	cfg, err := config.Load("", nil)
+	cfg, err := config.Load(*cfgPath, nil)
 	if err != nil {
 		return err
 	}
@@ -598,12 +601,13 @@ func runBackup(args []string) error {
 	var (
 		dbPath  = fs.String("db", "", "путь к БД (если пусто — из конфига)")
 		outPath = fs.String("out", "", "куда сохранить дамп (по умолчанию рядом с БД)")
+		cfgPath = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	cfg, err := config.Load("", nil)
+	cfg, err := config.Load(*cfgPath, nil)
 	if err != nil {
 		return err
 	}
