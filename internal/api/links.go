@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/bassvii/gopanel/internal/db"
 	"github.com/bassvii/gopanel/internal/links"
@@ -33,14 +32,7 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Извлечь userID из пути: /users/{id}/links
-	path := strings.TrimPrefix(r.URL.Path, s.secret+"/users/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 || parts[1] != "links" {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-	userID, err := strconv.ParseInt(parts[0], 10, 64)
+	userID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid user id", http.StatusBadRequest)
 		return
