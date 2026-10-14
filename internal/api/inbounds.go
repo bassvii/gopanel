@@ -3,15 +3,33 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"fmt"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/db"
 )
+
+const settingAdminPort = "admin_port"
+
+// adminPortFromDB читает порт админки из settings (0, если не задан).
+// Нужен, чтобы запретить инбаундам занимать порт панели.
+func adminPortFromDB(conn *sql.DB) int {
+	v, ok, err := db.GetSetting(conn, settingAdminPort)
+	if err != nil || !ok {
+		return 0
+	}
+	p, err := strconv.Atoi(v)
+	if err != nil {
+		return 0
+	}
+	return p
+}
 
 type inboundDTO struct {
 	ID           int64  `json:"id"`
@@ -91,7 +109,13 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 			return
 		}
-		if err := validateInbound(p); err != nil {
+		existing, err := db.ListInbounds(s.db)
+		if err != nil {
+			s.log.Error("list inbounds for validation failed", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if err := validateInbound(p, adminPortFromDB(s.db), existing, 0); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -152,11 +176,17 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 			return
 		}
-		if err := validateInbound(p); err != nil {
+		existing, err := db.ListInbounds(s.db)
+		if err != nil {
+			s.log.Error("list inbounds for validation failed", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if err := validateInbound(p, adminPortFromDB(s.db), existing, id); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		err := db.UpdateInbound(s.db, db.Inbound{
+		err = db.UpdateInbound(s.db, db.Inbound{
 			ID: id, Tag: p.Tag, Protocol: p.Protocol, Port: p.Port, Listen: p.Listen,
 			SettingsJSON: p.SettingsJSON, StreamJSON: p.StreamJSON,
 			SniffingJSON: p.SniffingJSON, RealityPublicKey: p.RealityPublicKey,
@@ -187,7 +217,10 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func validateInbound(p inboundPayload) error {
+// reservedPorts — порты, которые нельзя занимать инбаундом.
+// 10085 — встроенный API Xray для StatsService.
+// Порт админки панели проверяется отдельно (передаётся в validateInbound).
+func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, excludeID int64) error {
 	if strings.TrimSpace(p.Tag) == "" {
 		return errors.New("tag is required")
 	}
@@ -200,6 +233,29 @@ func validateInbound(p inboundPayload) error {
 	if p.Listen == "" {
 		p.Listen = "0.0.0.0"
 	}
+
+	// Запрет на порт админки и StatsService.
+	if p.Port == adminPort {
+		return fmt.Errorf("port %d занят админкой панели", p.Port)
+	}
+	if p.Port == 10085 {
+		return errors.New("порт 10085 зарезервирован для StatsService Xray")
+	}
+
+	// Уникальность (listen, port) среди включённых инбаундов.
+	// Игнорируем excludeID — это случай, когда мы обновляем тот же инбаунд.
+	for _, in := range existing {
+		if in.ID == excludeID {
+			continue
+		}
+		if !in.Enabled {
+			continue
+		}
+		if in.Port == p.Port && in.Listen == p.Listen {
+			return fmt.Errorf("порт %d на %s уже занят инбаундом %q", p.Port, p.Listen, in.Tag)
+		}
+	}
+
 	for _, s := range []string{p.SettingsJSON, p.StreamJSON, p.SniffingJSON} {
 		if err := db.ValidateJSON(s); err != nil {
 			return err

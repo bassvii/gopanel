@@ -133,7 +133,35 @@ func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
 			return fmt.Errorf("stop for reload: %w", err)
 		}
 	}
-	return c.process.Start(ctx)
+	if err := c.process.Start(ctx); err != nil {
+		return err
+	}
+
+	// 4. Убедиться, что процесс жив через паузу. Если Xray упал
+	// сразу после старта (например, порт занят), supervise уже
+	// выставил IsRunning=false. Даём 1.5 секунды, чтобы это
+	// отследить, и возвращаем ошибку наверх — UI должен знать,
+	// что конфиг не применился, а не показывать «успех».
+	if err := c.waitStarted(1500 * time.Millisecond); err != nil {
+		return err
+	}
+	return nil
+}
+
+// waitStarted ждёт до timeout, проверяя, что процесс жив.
+// Если процесс упал за это время — возвращает LastError.
+func (c *Core) waitStarted(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !c.process.IsRunning() {
+			if err := c.process.LastError(); err != nil {
+				return fmt.Errorf("xray failed to start: %w", err)
+			}
+			return errors.New("xray failed to start (unknown error)")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil
 }
 
 // tempConfigPath возвращает путь к временному файлу с расширением .json,

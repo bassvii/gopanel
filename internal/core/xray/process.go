@@ -152,6 +152,7 @@ func (p *Process) supervise(ctx context.Context, cmd *exec.Cmd) {
 	p.cancel = nil
 	close(done)
 	restarts := p.restarts
+	uptime := time.Now().Unix() - p.startedAt.Load()
 	p.mu.Unlock()
 
 	p.running.Store(false)
@@ -160,6 +161,16 @@ func (p *Process) supervise(ctx context.Context, cmd *exec.Cmd) {
 	if ctx.Err() != nil {
 		// Штатная остановка — перезапускать не нужно.
 		return
+	}
+
+	// Если процесс проработал больше 60 секунд, он был здоровым.
+	// Сбрасываем счётчик перезапусков: следующий сбой — не «пятый
+	// подряд», а новый инцидент. См. P1-13 второго аудита.
+	if uptime > 60 {
+		p.mu.Lock()
+		p.restarts = 0
+		restarts = 0
+		p.mu.Unlock()
 	}
 
 	// Фатальные ошибки — не перезапускаем.
