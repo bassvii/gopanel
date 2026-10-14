@@ -1,11 +1,72 @@
 # Security Policy
 
-## How to report a vulnerability
+## Reporting a vulnerability
 
-Do not open a public issue. Email <insert address>.
-Describe the reproduction steps, version, and environment.
-You will receive a response within 72 hours, and a fix will be provided as soon as possible.
+**Не открывайте публичный issue для уязвимостей.** Это раскрывает
+проблему до того, как её можно исправить.
+
+Как сообщить:
+
+1. **GitHub Security Advisory** (предпочтительно):
+   откройте [https://github.com/bassvii/gopanel/security/advisories/new](https://github.com/bassvii/gopanel/security/advisories/new).
+
+2. **Email** (если GitHub недоступен): `<insert address>`.
+
+Опишите:
+
+- версию (коммит / тег),
+- шаги воспроизведения,
+- ожидаемое и фактическое поведение,
+- влияние (что может сделать атакующий),
+- вашу среду (ОС, как установлено).
+
+Ответ в течение 72 часов. Исправление — как только получится,
+с вашим упоминанием в release notes (если хотите).
+
+## Модель угроз
+
+gopanel — self-hosted панель для одного сервера. Основные допущения:
+
+- **Админка слушает только `127.0.0.1`.** Снаружи доступ — через
+  SSH-туннель (`ssh -L`). Никакого TLS-терминирования в самой панели
+  нет, это ответственность оператора (nginx, caddy, SSH).
+- **Пользователь — администратор сервера.** Он имеет root/sudo,
+  контролирует ядро и БД. Модель угроз не защищает от самого админа.
+- **Панель и Xray — на одном хосте.** Компромисс: адрес ноды = адрес
+  панели. См. раздел «Один сервер» в DESIGN.ru.md.
+
+Активно защищаемся от:
+
+- Подбора пароля (argon2id, rate limit, lockout).
+- Кражи сессии (HttpOnly, SameSite=Strict, CSRF, idle-таймаут, список сессий).
+- Утечки 2FA-секретов при бэкапе (шифрование AES-256-GCM ключом вне БД).
+- Компрометации upstream-релизов (фиксация версий Xray/GeoIP/GeoSite + SHA-256).
+- Подмены IP через X-Forwarded-For (доверяем только `TrustedProxies`).
+- Path traversal при генерации TLS-сертификатов (валидация имени/домена).
+
+Не защищаемся от:
+
+- Атак на стороне хоста (root-доступ = компрометация).
+- Malware на машине администратора.
+- Физического доступа к серверу.
+- Социальной инженерии.
 
 ## Supported versions
 
-Until the project is released, only the `main` branch is supported.
+До первого релиза поддерживается только ветка `main`.
+
+## Известные ограничения сканера
+
+`govulncheck` иногда сообщает о **GO-2026-5932**
+(`golang.org/x/crypto/openpgp` — unmaintained, unsafe by design).
+Уязвимость находится в модуле `golang.org/x/crypto`, но gopanel
+использует из него только `argon2`. Пакет `openpgp` в графе вызовов
+не участвует и в бинарник не линкуется. Действий не требуется.
+
+## Безопасность по умолчанию
+
+- Пароль админа — минимум 12 символов.
+- 2FA (TOTP) — рекомендуется, но не обязательна.
+- Бэкап содержит хеши паролей и зашифрованные TOTP-секреты;
+  скачивание требует ввода пароля.
+- Публичный listener подписок выключен по умолчанию.
