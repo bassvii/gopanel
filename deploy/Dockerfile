@@ -21,14 +21,18 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata unzip curl
 
-# Xray — ставим в образ.
-ARG XRAY_VERSION=latest
-RUN if [ "$XRAY_VERSION" = "latest" ]; then \
-        URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"; \
-    else \
-        URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip"; \
-    fi && \
-    curl -fsSL -o /tmp/xray.zip "$URL" && \
+# Xray — фиксированная версия с проверкой SHA-256.
+#
+# ВАЖНО: значения дублируют deploy/versions.env. При обновлении
+# править оба места. В перспективе — синхронизировать через
+# build --build-arg (отдельная задача).
+#
+# Архитектура: amd64 (для arm64-образов — отдельная правка с TARGETARCH).
+ARG XRAY_VERSION=v26.3.27
+ARG XRAY_SHA256_AMD64=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae
+RUN curl -fsSL -o /tmp/xray.zip \
+        "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" && \
+    echo "${XRAY_SHA256_AMD64}  /tmp/xray.zip" | sha256sum -c - && \
     unzip -q /tmp/xray.zip -d /tmp/xray && \
     mv /tmp/xray/xray /usr/local/bin/xray && \
     chmod +x /usr/local/bin/xray && \

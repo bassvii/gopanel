@@ -4,11 +4,16 @@ package system
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -19,10 +24,22 @@ const (
 	GeoIPFile   = "geoip.dat"
 )
 
-// Источники файлов (Loyalsoldier).
+// Версия geosite/geoip (Loyalsoldier/v2ray-rules-dat).
+// Синхронизируется с deploy/versions.env (GEO_TAG).
+// Обновлять вручную: взять свежий тег с GitHub, посчитать sha256,
+// обновить обе константы ниже и в deploy/versions.env.
 const (
-	GeoSiteURL = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
-	GeoIPURL   = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+	GeoTag = "202610132205"
+
+	// SHA-256 файлов этого релиза.
+	GeoSiteSHA256 = "c5a73fbd415bb0506ecf8fa574caadc6f54a71d9308c265e97da49e4cebf8466"  // ← сюда хеш geosite.dat
+	GeoIPSHA256   = "116cc0f03d48991962f7f9cdbbcf53d45d89777f9c3cd1a663210853e5df6093"  // ← сюда хеш geoip.dat
+)
+
+// Источники файлов (Loyalsoldier), зафиксированы на GeoTag.
+var (
+	GeoSiteURL = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/" + GeoTag + "/geosite.dat"
+	GeoIPURL   = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/" + GeoTag + "/geoip.dat"
 )
 
 // GeoFileInfo — информация о файле.
@@ -69,12 +86,12 @@ func UpdateGeo(ctx context.Context) (int, error) {
 
 	updated := 0
 
-	if err := downloadFile(ctx, GeoSiteURL, filepath.Join(GeoDir, GeoSiteFile)); err != nil {
+	if err := downloadFile(ctx, GeoSiteURL, GeoSiteSHA256, filepath.Join(GeoDir, GeoSiteFile)); err != nil {
 		return updated, fmt.Errorf("geosite: %w", err)
 	}
 	updated++
 
-	if err := downloadFile(ctx, GeoIPURL, filepath.Join(GeoDir, GeoIPFile)); err != nil {
+	if err := downloadFile(ctx, GeoIPURL, GeoIPSHA256, filepath.Join(GeoDir, GeoIPFile)); err != nil {
 		return updated, fmt.Errorf("geoip: %w", err)
 	}
 	updated++
@@ -82,8 +99,10 @@ func UpdateGeo(ctx context.Context) (int, error) {
 	return updated, nil
 }
 
-// downloadFile скачивает URL в файл через временный файл.
-func downloadFile(ctx context.Context, url, dst string) error {
+// downloadFile скачивает URL во временный файл, проверяет SHA-256,
+// и только потом перемещает в целевой путь. При несовпадении —
+// удаляет временный файл и возвращает ошибку.
+func downloadFile(ctx context.Context, url, expectedSHA, dst string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
@@ -115,10 +134,42 @@ func downloadFile(ctx context.Context, url, dst string) error {
 	}
 	f.Close()
 
+	// Проверка SHA-256 перед заменой целевого файла.
+	if err := verifySHA256(tmp, expectedSHA); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("sha256 check failed: %w", err)
+	}
+
 	if err := os.Chmod(tmp, 0o644); err != nil {
 		os.Remove(tmp)
 		return err
 	}
 
 	return os.Rename(tmp, dst)
+}
+
+// verifySHA256 считает sha256 файла и сравнивает с ожидаемым (hex).
+// Сравнение константное по времени через subtle.ConstantTimeCompare.
+func verifySHA256(path, expected string) error {
+	expected = strings.ToLower(strings.TrimSpace(expected))
+	if expected == "" {
+		return errors.New("expected sha256 is empty")
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+
+	if subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) != 1 {
+		return fmt.Errorf("expected %s, got %s", expected, actual)
+	}
+	return nil
 }

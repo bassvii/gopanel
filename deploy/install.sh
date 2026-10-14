@@ -146,15 +146,46 @@ install_xray() {
         warn "Xray не отвечает на version — проверьте установку"
     fi
 
-    # Скачиваем GeoIP/GeoSite.
-    log "скачиваю GeoIP/GeoSite"
+    # Скачиваем GeoIP/GeoSite из зафиксированного релиза.
+    log "скачиваю GeoIP/GeoSite (тег ${GEO_TAG})"
     mkdir -p "$GEO_DIR"
-    curl -fsSL -o "$GEO_DIR/geosite.dat" \
-        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || \
-        warn "не удалось скачать geosite.dat"
-    curl -fsSL -o "$GEO_DIR/geoip.dat" \
-        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || \
-        warn "не удалось скачать geoip.dat"
+
+    : "${GEO_TAG:?GEO_TAG не задан в versions.env}"
+    : "${GEO_SHA256_GEOSITE:?GEO_SHA256_GEOSITE не задан в versions.env}"
+    : "${GEO_SHA256_GEOIP:?GEO_SHA256_GEOIP не задан в versions.env}"
+
+    local geo_base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_TAG}"
+
+    download_geo() {
+        local name="$1" url="$2" expected="$3" dst="$4"
+        local tmp="${dst}.tmp"
+
+        if ! curl -fsSL -o "$tmp" "$url"; then
+            warn "не удалось скачать ${name} (${url})"
+            rm -f "$tmp"
+            return 1
+        fi
+
+        if ! echo "${expected}  $tmp" | sha256sum -c - >/dev/null 2>&1; then
+            local actual
+            actual=$(sha256sum "$tmp" | awk '{print $1}')
+            warn "${name}: SHA-256 не совпал"
+            warn "  ожидалось: ${expected}"
+            warn "  получено:  ${actual}"
+            rm -f "$tmp"
+            return 1
+        fi
+
+        chmod 0644 "$tmp"
+        mv "$tmp" "$dst"
+        return 0
+    }
+
+    download_geo "geosite.dat" "${geo_base}/geosite.dat" \
+        "$GEO_SHA256_GEOSITE" "$GEO_DIR/geosite.dat" || true
+
+    download_geo "geoip.dat" "${geo_base}/geoip.dat" \
+        "$GEO_SHA256_GEOIP" "$GEO_DIR/geoip.dat" || true
 }
 
 # --- Firewall ---
