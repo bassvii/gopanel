@@ -40,13 +40,26 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверяем lockout и пароль через общий хелпер (см. P1-2
+	// третьего аудита). Дальше auth.ChangePassword ещё раз
+	// проверит старый пароль — это не дублирование, а атомарность
+	// в одной транзакции с UPDATE.
+	admin, err := auth.GetAdminByID(s.db, sess.AdminID)
+	if err != nil {
+		s.log.Error("get admin failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !s.verifyFreshPassword(w, r, sess, admin, req.OldPassword, "password_change") {
+		return
+	}
+
 	if err := auth.ChangePassword(s.db, sess.AdminID, sess.ID, req.OldPassword, req.NewPassword); err != nil {
-		// Неверный старый пароль — это неудачная попытка входа
-		// в sensitive-операцию. Считаем, чтобы нельзя было брутить
-		// старый пароль с украденной сессией.
 		if errors.Is(err, auth.ErrOldPasswordIncorrect) {
+			// Сюда попадаем только если пароль изменился между
+			// verifyFreshPassword и ChangePassword — гонка, крайне
+			// маловероятная. Считаем как неудачу.
 			_ = auth.RecordAdminFailedAttempt(s.db, sess.AdminID)
-			_ = audit.Log(s.db, sess.AdminID, "password_change_failed", "old_password", s.clientIP(r))
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "old password is incorrect"})
 			return
 		}

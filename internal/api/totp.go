@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -69,17 +68,9 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Уважаем admin lockout: не даём перебирать пароль через эту ручку.
-	if err := s.checkAdminLockout(w, admin.ID); err != nil {
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_setup") {
 		return
 	}
-
-	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
-		_ = audit.Log(s.db, sess.AdminID, "totp_setup_failed", "password", s.clientIP(r))
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
-		return
-	}
-	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	// Если 2FA уже включена — только явная ротация (disable → setup).
 	if admin.TOTPSecret != "" {
@@ -169,17 +160,9 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.checkAdminLockout(w, admin.ID); err != nil {
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_enable") {
 		return
 	}
-
-	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
-		_ = audit.Log(s.db, sess.AdminID, "totp_enable_failed", "password", s.clientIP(r))
-		writeJSON(w, http.StatusForbidden, totpEnableResponse{Error: "invalid credentials"})
-		return
-	}
-	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	pending, err := auth.GetPendingTOTPSecret(s.db, sess.AdminID)
 	if err != nil {
@@ -274,14 +257,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.checkAdminLockout(w, admin.ID); err != nil {
-		return
-	}
-
-	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
-		_ = audit.Log(s.db, sess.AdminID, "totp_disable_failed", "password", s.clientIP(r))
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_disable") {
 		return
 	}
 	if !auth.VerifyAndConsumeTOTP(s.db, admin.ID, admin.TOTPSecret, req.Code) {
@@ -290,7 +266,6 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	if err := auth.ClearTOTPSecret(s.db, sess.AdminID); err != nil {
 		s.log.Error("clear totp failed", "err", err)
@@ -318,26 +293,4 @@ func (s *Server) handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"enabled": admin.TOTPSecret != "",
 	})
-}
-
-// checkAdminLockout проверяет, не залочен ли аккаунт админа, и
-// если да — пишет 429 с Retry-After. Используется в sensitive-
-// ручках (setup/enable/disable 2FA, change-password, backup), где
-// нельзя перебирать пароль через украденную сессию.
-// См. P1-2 второго аудита.
-func (s *Server) checkAdminLockout(w http.ResponseWriter, adminID int64) error {
-	locked, wait, err := auth.IsAdminLockedOut(s.db, adminID)
-	if err != nil {
-		s.log.Error("admin lockout check failed", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return err
-	}
-	if locked {
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{
-			"error": "too many attempts, try later",
-		})
-		return errors.New("locked out")
-	}
-	return nil
 }
