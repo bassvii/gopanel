@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # --- Стадия 2: сборка Go ---
-FROM golang:1.27-alpine AS build
+FROM golang:1.27.2-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum ./

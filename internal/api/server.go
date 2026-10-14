@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -203,7 +205,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(s.secret+"/xray/tls-cert", s.handleTLSCert)
 
 	if s.webFS != nil {
-		s.mux.HandleFunc("/", s.handleStatic)
+		// Статика отдаётся только под секретным префиксом.
+		// На корне — 404. См. P2-13 аудита.
+		s.mux.HandleFunc(s.secret+"/", s.handleStatic)
+		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
 	} else {
 		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
@@ -214,17 +221,24 @@ func (s *Server) routes() {
 // handleStatic отдаёт файлы фронтенда. Если файл не найден —
 // отдаёт index.html (SPA-роутинг).
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/")
+	path := strings.TrimPrefix(r.URL.Path, s.secret)
+	path = strings.TrimPrefix(path, "/")
 	if path == "" {
 		path = "index.html"
 	}
-	f, err := s.webFS.Open(path)
+
+	data, err := fs.ReadFile(s.webFS, path)
 	if err != nil {
 		s.serveIndex(w, r)
 		return
 	}
-	f.Close()
-	http.FileServer(http.FS(s.webFS)).ServeHTTP(w, r)
+
+	// Content-Type по расширению.
+	ctype := mime.TypeByExtension(filepath.Ext(path))
+	if ctype != "" {
+		w.Header().Set("Content-Type", ctype)
+	}
+	_, _ = w.Write(data)
 }
 
 // serveIndex отдаёт index.html.

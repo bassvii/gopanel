@@ -1,6 +1,6 @@
 module github.com/bassvii/gopanel
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
