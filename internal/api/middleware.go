@@ -5,13 +5,31 @@ package api
 import (
 	"net/http"
 	"runtime/debug"
-	"time"
 	"strings"
+	"time"
 )
 
 // withMiddleware оборачивает mux в цепочку middleware.
+// maxRequestBody — лимит на размер тела запроса. 1 МБ хватает
+// для любого нашего JSON (пользователи, инбаунды, настройки),
+// но не даёт клиенту выесть память гигабайтом.
+const maxRequestBody = 1 << 20 // 1 MiB
+
+// withMiddleware оборачивает mux в цепочку middleware.
 func (s *Server) withMiddleware(next http.Handler) http.Handler {
-	return s.recoverer(s.logger(s.securityHeaders(next)))
+	return s.recoverer(s.logger(s.securityHeaders(s.limitBody(next))))
+}
+
+// limitBody ограничивает размер тела запроса. Для GET/DELETE
+// лимит не важен — там нет тела. Для POST/PUT — обрезает всё,
+// что больше maxRequestBody, и хендлер получит ошибку при чтении.
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // recoverer ловит паники в обработчиках и отвечает 500.
