@@ -127,7 +127,8 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 			Tag: p.Tag, Protocol: p.Protocol, Port: p.Port, Listen: p.Listen,
 			SettingsJSON: p.SettingsJSON, StreamJSON: p.StreamJSON,
 			SniffingJSON: p.SniffingJSON, RealityPublicKey: p.RealityPublicKey,
-			Enabled: p.Enabled,
+			VlessEncClient: p.VlessEncClient,
+			Enabled:        p.Enabled,
 		})
 		if err != nil {
 			s.log.Error("create inbound failed", "err", err)
@@ -196,7 +197,8 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 			ID: id, Tag: p.Tag, Protocol: p.Protocol, Port: p.Port, Listen: p.Listen,
 			SettingsJSON: p.SettingsJSON, StreamJSON: p.StreamJSON,
 			SniffingJSON: p.SniffingJSON, RealityPublicKey: p.RealityPublicKey,
-			Enabled: p.Enabled,
+			VlessEncClient: p.VlessEncClient,
+			Enabled:        p.Enabled,
 		})
 		if err != nil {
 			s.log.Error("update inbound failed", "err", err)
