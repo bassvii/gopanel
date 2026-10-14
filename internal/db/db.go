@@ -54,6 +54,13 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
+	// Одноразовая миграция TOTP-секретов из открытого текста
+	// в формат enc:v1:... Идемпотентна, повторный вызов ничего не делает.
+	if err := migrateSecrets(conn); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("migrate secrets: %w", err)
+	}
+
 	return conn, nil
 }
 
