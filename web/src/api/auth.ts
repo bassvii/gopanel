@@ -13,7 +13,7 @@ export async function login(username: string, password: string, totpCode?: strin
 }
 
 export async function logout(): Promise<void> {
-  await request('/logout', { method: 'POST' })
+  await request('/logout', { method: 'POST', withCSRF: true })
   setCSRF('')
 }
 

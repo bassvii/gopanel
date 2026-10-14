@@ -154,13 +154,21 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Если сессия валидна — требуем CSRF. Если cookie нет или
+	// сессия истекла — просто чистим cookie, это безопасно
+	// (нечего завершать).
 	cookie, err := r.Cookie(sessionCookieName)
 	if err == nil {
 		if sess, err := auth.GetSession(s.db, cookie.Value); err == nil {
+			if !s.requireCSRF(w, r, sess) {
+				return
+			}
 			_ = auth.DeleteSession(s.db, sess.ID)
 			_ = audit.Log(s.db, sess.AdminID, audit.ActionLogout, "", clientIP(r))
 		}
 	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
