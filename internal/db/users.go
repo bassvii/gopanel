@@ -120,7 +120,13 @@ func ListUsers(conn *sql.DB) ([]User, error) {
 	return out, rows.Err()
 }
 
-// UpdateUser обновляет пользователя.
+// UpdateUser обновляет поля пользователя, которые задаёт админ
+// через форму: name, email, enabled, quota_bytes, expires_at, note.
+//
+// Поля used_bytes, device_limit, sub_token_hash НЕ трогаются —
+// иначе каждое сохранение карточки сбрасывало бы счётчик трафика
+// (used_bytes пишет коллектор параллельно) и стирало бы sub-токен.
+// См. P1-1 третьего аудита.
 func UpdateUser(conn *sql.DB, u User) error {
 	if u.ID == 0 {
 		return errors.New("id is required")
@@ -131,11 +137,11 @@ func UpdateUser(conn *sql.DB, u User) error {
 	}
 	_, err := conn.Exec(
 		`UPDATE users
-		 SET name = ?, email = ?, enabled = ?, quota_bytes = ?, used_bytes = ?,
-		     expires_at = ?, device_limit = ?, sub_token_hash = ?, note = ?
+		 SET name = ?, email = ?, enabled = ?, quota_bytes = ?,
+		     expires_at = ?, note = ?
 		 WHERE id = ?`,
-		u.Name, u.Email, boolToInt(u.Enabled), u.QuotaBytes, u.UsedBytes,
-		expires, u.DeviceLimit, u.SubTokenHash, u.Note, u.ID,
+		u.Name, u.Email, boolToInt(u.Enabled), u.QuotaBytes,
+		expires, u.Note, u.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
