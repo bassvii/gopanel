@@ -18,7 +18,11 @@ SYSTEMD_UNIT="/etc/systemd/system/gopanel.service"
 
 GOPANEL_REPO="${GOPANEL_REPO:-https://github.com/bassvii/gopanel}"
 XRAY_REPO="https://github.com/XTLS/Xray-core"
-GEO_DIR="/usr/local/share/xray"
+# Geo-файлы хранятся рядом с данными панели, чтобы Xray мог их
+# читать, а панель — обновлять через UI (P2-1 третьего аудита).
+# Xray получает этот путь через XRAY_LOCATION_ASSET, который
+# выставляет панель при запуске.
+GEO_DIR="${GOPANEL_DIR}/xray"
 
 # Версии и хеши Xray — в одном файле рядом со скриптом.
 # Если файла нет — install.sh отказывается работать:
@@ -190,9 +194,20 @@ install_xray() {
 
 # --- Firewall ---
 
+# open_udp_for_hysteria — открывает UDP 443 и 8443 в ufw.
+# ВЫКЛЮЧЕНО по умолчанию: см. P2-3 третьего аудита.
+# На хосте с включённым ufw это открывало бы порты в интернет
+# всем, даже если Hysteria2 не используется. Админ должен
+# открыть порты сам, когда заведёт инбаунд.
+#
+# Если нужна автоматика — вызывайте с флагом --open-firewall
+# (переменная GOPANEL_OPEN_FIREWALL=1).
 open_udp_for_hysteria() {
+    if [[ "${GOPANEL_OPEN_FIREWALL:-0}" != "1" ]]; then
+        return 0
+    fi
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
-        log "открываю UDP-порты для Hysteria2 в ufw"
+        log "открываю UDP-порты для Hysteria2 в ufw (GOPANEL_OPEN_FIREWALL=1)"
         ufw allow 443/udp >/dev/null 2>&1 || true
         ufw allow 8443/udp >/dev/null 2>&1 || true
         ufw reload >/dev/null 2>&1 || true
@@ -232,6 +247,9 @@ setup_dirs() {
     log "создаю каталоги"
     install -d -m 0750 -o "$GOPANEL_USER" -g "$GOPANEL_USER" "$GOPANEL_DIR"
     install -d -m 0755 "$GOPANEL_CONFIG_DIR"
+    # Geo-файлы рядом с данными, владелец — gopanel, чтобы
+    # панель могла их обновлять через UI (P2-1).
+    install -d -m 0755 -o "$GOPANEL_USER" -g "$GOPANEL_USER" "$GEO_DIR"
 
     # Пустой конфиг: панель стартует с дефолтами, всё можно
     # переопределить через env или флаги. Класть сюда db_path/listen
@@ -272,6 +290,7 @@ After=network.target
 Type=simple
 User=$GOPANEL_USER
 Group=$GOPANEL_USER
+Environment=GOPANEL_GEO_DIR=$GEO_DIR
 ExecStart=$GOPANEL_BIN run --config $GOPANEL_CONFIG --db $GOPANEL_DB
 Restart=on-failure
 RestartSec=5
@@ -367,10 +386,13 @@ ${GREEN}Установка завершена.${NC}
       systemctl stop gopanel
       journalctl -u gopanel -f
 
-  UDP-порты для Hysteria2 (если используете firewall):
+ UDP-порты для Hysteria2 (откройте сами, когда заведёте инбаунд):
 
-      sudo ufw allow 443/udp
-      sudo ufw allow 8443/udp
+       sudo ufw allow 443/udp
+       sudo ufw allow 8443/udp
+
+   Повторный запуск install.sh с GOPANEL_OPEN_FIREWALL=1 откроет
+   их автоматически (не рекомендуется на общих хостах).
 
   Если Xray не может занять порт 443 (bind: permission denied):
 
