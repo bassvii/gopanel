@@ -107,7 +107,7 @@ func (s *Server) handleRoutingRules(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			s.log.Error("create routing rule failed", "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "routing_create", p.RuleTag, s.clientIP(r))
@@ -174,7 +174,8 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 			Enabled:         p.Enabled,
 		})
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.log.Error("update routing rule failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "routing_update", p.RuleTag, s.clientIP(r))
@@ -221,7 +222,8 @@ func (s *Server) handleRoutingRuleMoveRoute(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := db.MoveRoutingRule(s.db, id, dir); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.log.Error("move routing rule failed", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 	s.requestReload()

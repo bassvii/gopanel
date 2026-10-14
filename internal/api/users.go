@@ -113,7 +113,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			s.log.Error("create user failed", "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "user_create", p.Name, s.clientIP(r))
@@ -174,7 +174,8 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 			DeviceLimit: p.DeviceLimit, Note: p.Note,
 		})
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.log.Error("update user failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "user_update", p.Name, s.clientIP(r))
@@ -242,7 +243,8 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 	if cred == "" {
 		cred, err = generateCredential(in.Protocol)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.log.Error("generate credential failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 	} else {
@@ -258,7 +260,8 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 		InboundID:      p.InboundID,
 		CredentialJSON: cred,
 	}); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		s.log.Error("attach user to inbound failed", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 

@@ -184,7 +184,7 @@ func (s *Server) handleRoutingPresetApply(w http.ResponseWriter, r *http.Request
 		})
 		if err != nil {
 			s.log.Error("apply preset rule failed", "err", err, "rule", rule.RuleTag)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		created++

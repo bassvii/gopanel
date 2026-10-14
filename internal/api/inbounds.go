@@ -131,7 +131,7 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			s.log.Error("create inbound failed", "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "inbound_create", p.Tag, s.clientIP(r))
@@ -199,7 +199,8 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 			Enabled: p.Enabled,
 		})
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.log.Error("update inbound failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "inbound_update", p.Tag, s.clientIP(r))
