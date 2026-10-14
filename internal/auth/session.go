@@ -13,8 +13,12 @@ import (
 	"time"
 )
 
-// SessionTTL — время жизни сессии.
+// SessionTTL — максимальное время жизни сессии (даже при активности).
 const SessionTTL = 30 * 24 * time.Hour
+
+// SessionIdleTimeout — сколько сессия может простаивать без запросов,
+// прежде чем будет принудительно завершена. См. P1-6 аудита.
+const SessionIdleTimeout = 12 * time.Hour
 
 // ErrSessionNotFound возвращается, когда сессии нет или она истекла.
 var ErrSessionNotFound = errors.New("session not found")
@@ -97,7 +101,14 @@ func GetSession(conn *sql.DB, token string) (Session, error) {
 	s.LastSeen = time.Unix(lastSeen, 0)
 	s.ExpiresAt = time.Unix(expiresAt, 0)
 
-	if time.Now().After(s.ExpiresAt) {
+	now := time.Now()
+	if now.After(s.ExpiresAt) {
+		_ = DeleteSession(conn, s.ID)
+		return Session{}, ErrSessionNotFound
+	}
+	// Idle-таймаут: если с последней активности прошло больше
+	// SessionIdleTimeout — сессию считаем мёртвой.
+	if now.Sub(s.LastSeen) > SessionIdleTimeout {
 		_ = DeleteSession(conn, s.ID)
 		return Session{}, ErrSessionNotFound
 	}
@@ -125,9 +136,15 @@ func DeleteAllSessionsForAdmin(conn *sql.DB, adminID int64) error {
 	return err
 }
 
-// CleanupExpiredSessions удаляет истёкшие сессии.
+// CleanupExpiredSessions удаляет истёкшие сессии — и по абсолютному
+// TTL, и по idle-таймауту.
 func CleanupExpiredSessions(conn *sql.DB) (int64, error) {
-	res, err := conn.Exec(`DELETE FROM sessions WHERE expires_at < ?`, time.Now().Unix())
+	now := time.Now()
+	idleThreshold := now.Add(-SessionIdleTimeout).Unix()
+	res, err := conn.Exec(
+		`DELETE FROM sessions WHERE expires_at < ? OR last_seen < ?`,
+		now.Unix(), idleThreshold,
+	)
 	if err != nil {
 		return 0, err
 	}
