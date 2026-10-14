@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"errors"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -39,8 +40,18 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := auth.ChangePassword(s.db, sess.AdminID, req.OldPassword, req.NewPassword); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if err := auth.ChangePassword(s.db, sess.AdminID, sess.ID, req.OldPassword, req.NewPassword); err != nil {
+		// Неверный старый пароль — это неудачная попытка входа
+		// в sensitive-операцию. Считаем, чтобы нельзя было брутить
+		// старый пароль с украденной сессией.
+		if errors.Is(err, auth.ErrOldPasswordIncorrect) {
+			_ = auth.RecordAdminFailedAttempt(s.db, sess.AdminID)
+			_ = audit.Log(s.db, sess.AdminID, "password_change_failed", "old_password", s.clientIP(r))
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "old password is incorrect"})
+			return
+		}
+		s.log.Error("change password failed", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 

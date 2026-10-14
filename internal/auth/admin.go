@@ -13,6 +13,11 @@ import (
 // ErrNoAdmins возвращается, когда в базе ещё нет ни одного админа.
 var ErrNoAdmins = errors.New("no admins in database")
 
+// ErrOldPasswordIncorrect — старый пароль не совпал при смене.
+// Sentinel нужен, чтобы хендлер отличил «неверный пароль» (403)
+// от внутренней ошибки (500).
+var ErrOldPasswordIncorrect = errors.New("old password is incorrect")
+
 // decryptTOTPFields расшифровывает totp_secret и totp_pending_secret
 // в структуре Admin. Пустые строки остаются пустыми. Значения без
 // префикса enc:v1: (старые, до миграции) возвращаются как есть —
@@ -111,23 +116,49 @@ func GetAdminByUsername(conn *sql.DB, username string) (Admin, error) {
 }
 
 // ChangePassword меняет пароль администратора, проверяя старый.
-func ChangePassword(conn *sql.DB, adminID int64, oldPassword, newPassword string) error {
+// keepSessionID — сессия, которую не нужно отзывать (текущая).
+// Все остальные сессии администратора завершаются: если пароль
+// меняют после кражи сессии, старая сессия не должна выжить.
+//
+// См. P0-3 второго аудита.
+func ChangePassword(conn *sql.DB, adminID int64, keepSessionID, oldPassword, newPassword string) error {
 	admin, err := GetAdminByID(conn, adminID)
 	if err != nil {
 		return err
 	}
 	if err := VerifyPassword(oldPassword, admin.PasswordHash); err != nil {
-		return errors.New("old password is incorrect")
+		return ErrOldPasswordIncorrect
 	}
 	hash, err := HashPassword(newPassword)
 	if err != nil {
 		return err
 	}
-	_, err = conn.Exec(`UPDATE admins SET password_hash = ? WHERE id = ?`, hash, adminID)
+
+	tx, err := conn.Begin()
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`UPDATE admins SET password_hash = ? WHERE id = ?`, hash, adminID); err != nil {
 		return fmt.Errorf("update password: %w", err)
 	}
-	return nil
+
+	// Отзываем все сессии, кроме текущей.
+	if keepSessionID != "" {
+		if _, err := tx.Exec(
+			`DELETE FROM sessions WHERE admin_id = ? AND id != ?`,
+			adminID, keepSessionID,
+		); err != nil {
+			return fmt.Errorf("delete other sessions: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(`DELETE FROM sessions WHERE admin_id = ?`, adminID); err != nil {
+			return fmt.Errorf("delete sessions: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 // GetAdminByID возвращает админа по ID.
