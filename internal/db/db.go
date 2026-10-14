@@ -9,25 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/bassvii/gopanel/internal/auth"
 )
-
-var (
-	secretKey   []byte
-	secretKeyMu sync.RWMutex
-)
-
-// SecretKey возвращает ключ шифрования секретов, загруженный при Open.
-// Возвращает nil, если Open ещё не вызывался.
-func SecretKey() []byte {
-	secretKeyMu.RLock()
-	defer secretKeyMu.RUnlock()
-	return secretKey
-}
 
 // Open открывает базу, включает WAL, выставляет права 0600 на файл,
 // применяет миграции.
@@ -42,9 +28,7 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load secret key: %w", err)
 	}
-	secretKeyMu.Lock()
-	secretKey = key
-	secretKeyMu.Unlock()
+	auth.SetSecretKey(key)
 
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	conn, err := sql.Open("sqlite", dsn)

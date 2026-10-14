@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // KeySize — длина ключа шифрования (AES-256).
@@ -59,4 +60,24 @@ func LoadOrCreateKey(path string) ([]byte, error) {
 		return nil, fmt.Errorf("rename key: %w", err)
 	}
 	return key, nil
+}
+
+var (
+	globalKey   []byte
+	globalKeyMu sync.RWMutex
+)
+
+// SetSecretKey устанавливает глобальный ключ шифрования.
+// Вызывается один раз из db.Open при старте панели.
+func SetSecretKey(key []byte) {
+	globalKeyMu.Lock()
+	defer globalKeyMu.Unlock()
+	globalKey = key
+}
+
+// SecretKey возвращает установленный ключ (или nil).
+func SecretKey() []byte {
+	globalKeyMu.RLock()
+	defer globalKeyMu.RUnlock()
+	return globalKey
 }
