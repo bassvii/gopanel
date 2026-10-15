@@ -3,8 +3,19 @@
 package links
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGenerateVLESSPlain(t *testing.T) {
@@ -178,7 +189,11 @@ func TestGenerateHysteria2(t *testing.T) {
 	if !strings.HasPrefix(got, "hysteria2://secret123@vpn.example.com:8443/") {
 		t.Errorf("got %q, want prefix hysteria2://secret123@vpn.example.com:8443/", got)
 	}
-	for _, want := range []string{"alpn=h3", "insecure=1", "#test"} {
+	// insecure/pinSHA256 появляются только если сертификат реально
+	// существует и самоподписан. В тесте путь /path/cert.crt
+	// не существует — certInfo вернёт (false, ""), флаги не
+	// добавятся. Проверяем только безусловные параметры.
+	for _, want := range []string{"alpn=h3", "#test"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("got %q, missing %q", got, want)
 		}
@@ -212,6 +227,54 @@ func TestGenerateHysteria2NoAuth(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("expected error when no auth found")
+	}
+}
+
+func TestGenerateHysteria2SelfSigned(t *testing.T) {
+	// Генерируем временный самоподписанный сертификат.
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "cert.pem")
+
+	// Простой self-signed X.509 через crypto/x509.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName:   "test",
+			Organization: []string{"gopanel"},
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Generate(Input{
+		Protocol:     "hysteria",
+		Address:      "vpn.example.com",
+		Port:         8443,
+		SettingsJSON: `{"version":2,"users":[{"auth":"secret123","email":"u@gopanel"}]}`,
+		StreamJSON:   fmt.Sprintf(`{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":%q,"keyFile":"/dev/null"}],"alpn":["h3"]}}`, certPath),
+		Remark:       "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"alpn=h3", "insecure=1", "pinSHA256=", "#test"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got %q, missing %q", got, want)
+		}
 	}
 }
 
