@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -332,12 +333,12 @@ func randomUUID() (string, error) {
 func randomPassword(n int) (string, error) {
 	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	out := make([]byte, n)
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
 	for i := range out {
-		out[i] = alphabet[int(buf[i])%len(alphabet)]
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			return "", err
+		}
+		out[i] = alphabet[idx.Int64()]
 	}
 	return string(out), nil
 }

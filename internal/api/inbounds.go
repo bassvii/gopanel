@@ -32,6 +32,18 @@ func adminPortFromDB(conn *sql.DB) int {
 	return p
 }
 
+// supportedProtocols — протоколы, которые gopanel знает и умеет
+// генерировать в конфиг Xray. Всё остальное — ошибка на сохранении.
+var supportedProtocols = map[string]bool{
+	"vless":       true,
+	"vmess":       true,
+	"trojan":      true,
+	"shadowsocks": true,
+	"socks":       true,
+	"http":        true,
+	"hysteria":    true,
+}
+
 type inboundDTO struct {
 	ID               int64  `json:"id"`
 	Tag              string `json:"tag"`
@@ -259,8 +271,14 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 			return fmt.Errorf("тег %q зарезервирован (используется gopanel)", tag)
 		}
 	}
-	if strings.TrimSpace(p.Protocol) == "" {
+	protocol := strings.TrimSpace(p.Protocol)
+	if protocol == "" {
 		return errors.New("protocol is required")
+	}
+	// Whitelist поддерживаемых протоколов Xray.
+	// Иначе Xray примет строку в конфиге, но упадёт на -test.
+	if !supportedProtocols[protocol] {
+		return fmt.Errorf("протокол %q не поддерживается", protocol)
 	}
 	if p.Port < 1 || p.Port > 65535 {
 		return errors.New("port must be 1..65535")
@@ -289,8 +307,18 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 		if !in.Enabled {
 			continue
 		}
-		if in.Port == p.Port && in.Listen == p.Listen {
-			return fmt.Errorf("порт %d на %s уже занят инбаундом %q", p.Port, p.Listen, in.Tag)
+		if in.Port != p.Port {
+			continue
+		}
+		// Один порт на двух listen'ах конфликтует, если один из
+		// них 0.0.0.0 (или ::), либо listen'ы совпадают.
+		if in.Listen == p.Listen ||
+			in.Listen == "0.0.0.0" || in.Listen == "::" ||
+			p.Listen == "0.0.0.0" || p.Listen == "::" {
+			return fmt.Errorf(
+				"порт %d на %s конфликтует с инбаундом %q (%s)",
+				p.Port, p.Listen, in.Tag, in.Listen,
+			)
 		}
 	}
 

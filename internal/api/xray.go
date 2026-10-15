@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
-	"regexp"
 
 	"github.com/bassvii/gopanel/internal/audit"
+	"github.com/bassvii/gopanel/internal/core/xray"
 )
 
 // handleX25519 — POST /xray/x25519
@@ -113,11 +113,6 @@ func (s *Server) handleVlessEnc(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-var (
-	certNameRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-	certDomainRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
-)
-
 type tlsCertRequest struct {
 	Domain      string `json:"domain"`
 	Name        string `json:"name"`
@@ -170,13 +165,13 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Валидация до вызова ядра — чтобы отсеять мусор и traversal.
-	if !certNameRe.MatchString(name) {
+	if !xray.CertNameRe.MatchString(name) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "invalid cert name: allowed a-z, A-Z, 0-9, _, - (1-64 chars)",
 		})
 		return
 	}
-	if req.Domain != "" && req.Domain != "localhost" && !certDomainRe.MatchString(req.Domain) {
+	if req.Domain != "" && req.Domain != "localhost" && !xray.CertDomainRe.MatchString(req.Domain) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "invalid domain",
 		})

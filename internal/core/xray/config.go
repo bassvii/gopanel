@@ -298,6 +298,9 @@ func buildOutbounds(list []OutboundInput) ([]map[string]any, error) {
 	hasFreedom := false
 	hasBlackhole := false
 	for _, o := range list {
+		if !o.Enabled {
+			continue
+		}
 		switch o.Protocol {
 		case "freedom":
 			hasFreedom = true

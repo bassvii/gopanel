@@ -20,14 +20,12 @@ type TLSCertResult struct {
 	Domain   string `json:"domain"`
 }
 
-// Допустимое имя файла сертификата: буквы, цифры, дефис, подчёркивание.
-// Точка запрещена — иначе имя может выйти за пределы каталога.
-var certNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+// CertNameRe — регулярка для имени файла сертификата.
+// Экспортирована, чтобы api/xray.go не дублировал.
+var CertNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// Допустимый домен: набор меток через точку, каждая метка — буквы/цифры/дефис,
-// не начинается и не заканчивается дефисом. Длина метки 1..63.
-// Разрешены одиночные символы "*" в начале (wildcard) — но только как первая метка.
-var certDomainRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
+// CertDomainRe — регулярка для домена.
+var CertDomainRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
 
 func (c *Core) GenerateTLSCert(dir, name, domain string, expireHours int) (TLSCertResult, error) {
 	if dir == "" {
@@ -44,10 +42,10 @@ func (c *Core) GenerateTLSCert(dir, name, domain string, expireHours int) (TLSCe
 	}
 
 	// Валидация входных данных.
-	if !certNameRe.MatchString(name) {
+	if !CertNameRe.MatchString(name) {
 		return TLSCertResult{}, fmt.Errorf("invalid cert name: %q", name)
 	}
-	if domain != "localhost" && !certDomainRe.MatchString(domain) {
+	if domain != "localhost" && !CertDomainRe.MatchString(domain) {
 		return TLSCertResult{}, fmt.Errorf("invalid domain: %q", domain)
 	}
 

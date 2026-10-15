@@ -192,7 +192,11 @@ func MoveRoutingRule(conn *sql.DB, id int64, direction string) error {
 	defer tx.Rollback()
 
 	var pos int
-	if err := tx.QueryRow(`SELECT position FROM routing_rules WHERE id = ?`, id).Scan(&pos); err != nil {
+	err = tx.QueryRow(`SELECT position FROM routing_rules WHERE id = ?`, id).Scan(&pos)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
 		return err
 	}
 
