@@ -8,7 +8,7 @@ import { Inbounds } from './pages/Inbounds'
 import { Audit } from './pages/Audit'
 import { Settings } from './pages/Settings'
 import { me } from './api/auth'
-import { RouterProvider, useRouter, type Route } from './lib/router'
+import { RouterProvider, useRouter, isKnownPath, type Route } from './lib/router'
 import { Routing } from './pages/Routing'
 import { NotFound } from './pages/NotFound'
 
@@ -55,13 +55,17 @@ function Page({ route }: { route: Route['name'] }) {
 
 function Shell({ onLogout }: { onLogout: () => void }) {
   const { route } = useRouter()
+  const known = isKnownPath()
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header title={titles[route.name]} onLogout={onLogout} />
-        <Page route={route.name} />
+        <Header
+          title={known ? titles[route.name] : '404'}
+          onLogout={onLogout}
+        />
+        {known ? <Page route={route.name} /> : <NotFound />}
       </div>
     </div>
   )
