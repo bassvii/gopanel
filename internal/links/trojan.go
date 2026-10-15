@@ -43,11 +43,17 @@ func generateTrojan(in Input) (string, error) {
 			}
 		}
 		if reality != nil {
-			if sni := getString(reality, "serverName"); sni != "" {
+			if sni := firstString(reality, "serverNames"); sni != "" {
 				q.Set("sni", sni)
 			}
 			if pbk := getString(reality, "publicKey"); pbk != "" {
 				q.Set("pbk", pbk)
+			}
+			if sid := firstString(reality, "shortIds"); sid != "" {
+				q.Set("sid", sid)
+			}
+			if spx := getString(reality, "spiderX"); spx != "" {
+				q.Set("spx", spx)
 			}
 		}
 	}

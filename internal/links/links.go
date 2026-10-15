@@ -10,16 +10,16 @@ import (
 
 // Input — данные, нужные для генерации ссылки.
 type Input struct {
-	Protocol       string // vless, vmess, trojan, shadowsocks, ...
-	Tag            string // тег инбаунда
-	Address        string // адрес сервера (IP или домен)
-	Port           int
-	CredentialJSON string // {"id":"..."} или {"password":"..."}
-	SettingsJSON   string // settings инбаунда (decryption, method, ...)
-	StreamJSON     string // streamSettings инбаунда (tls, reality, ws, ...)
+	Protocol         string // vless, vmess, trojan, shadowsocks, ...
+	Tag              string // тег инбаунда
+	Address          string // адрес сервера (IP или домен)
+	Port             int
+	CredentialJSON   string // {"id":"..."} или {"password":"..."}
+	SettingsJSON     string // settings инбаунда (decryption, method, ...)
+	StreamJSON       string // streamSettings инбаунда (tls, reality, ws, ...)
 	RealityPublicKey string
 	VlessEncClient   string
-	Remark         string // имя записи
+	Remark           string // имя записи
 }
 
 // Generate возвращает ссылку для протокола.
@@ -64,6 +64,25 @@ func parseJSON(s string) (map[string]any, error) {
 func getString(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
+	}
+	return ""
+}
+
+// firstString возвращает первый непустой элемент массива строк
+// по ключу. streamSettings.realitySettings хранит serverNames
+// и shortIds как массивы, а не строки — getString их не находит.
+// Fallback: если значение пришло строкой, возвращаем её.
+// См. #4 нового аудита.
+func firstString(m map[string]any, key string) string {
+	if a, ok := m[key].([]any); ok {
+		for _, v := range a {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	if s, ok := m[key].(string); ok {
+		return s
 	}
 	return ""
 }

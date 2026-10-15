@@ -46,13 +46,16 @@ func generateVLESS(in Input) (string, error) {
 			}
 		}
 		if security == "reality" {
-			if sni := getString(reality, "serverName"); sni != "" {
+			// serverNames и shortIds во фронте — массивы, не строки.
+			// getString их не находит, в ссылку sni и sid не попадали.
+			// См. #4 нового аудита.
+			if sni := firstString(reality, "serverNames"); sni != "" {
 				q.Set("sni", sni)
 			}
 			if in.RealityPublicKey != "" {
 				q.Set("pbk", in.RealityPublicKey)
 			}
-			if sid := getString(reality, "shortId"); sid != "" {
+			if sid := firstString(reality, "shortIds"); sid != "" {
 				q.Set("sid", sid)
 			}
 			if fp := getString(reality, "fingerprint"); fp != "" {
@@ -60,6 +63,10 @@ func generateVLESS(in Input) (string, error) {
 			}
 			if flow := getString(reality, "flow"); flow != "" {
 				q.Set("flow", flow)
+			}
+			// spx — spiderX, нужен клиенту для маскировки.
+			if spx := getString(reality, "spiderX"); spx != "" {
+				q.Set("spx", spx)
 			}
 		}
 	}

@@ -155,12 +155,12 @@ func TestGenerateUnsupported(t *testing.T) {
 
 func TestGenerateHysteria2(t *testing.T) {
 	got, err := Generate(Input{
-		Protocol: "hysteria",
-		Address:  "vpn.example.com",
-		Port:     8443,
+		Protocol:     "hysteria",
+		Address:      "vpn.example.com",
+		Port:         8443,
 		SettingsJSON: `{"version":2,"users":[{"auth":"secret123","email":"user@gopanel"}]}`,
-		StreamJSON: `{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/path/cert.crt","keyFile":"/path/cert.key"}],"alpn":["h3"]},"hysteriaSettings":{"version":2}}`,
-		Remark:   "test",
+		StreamJSON:   `{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/path/cert.crt","keyFile":"/path/cert.key"}],"alpn":["h3"]},"hysteriaSettings":{"version":2}}`,
+		Remark:       "test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -179,12 +179,12 @@ func TestGenerateHysteria2(t *testing.T) {
 
 func TestGenerateHysteria2IPv6(t *testing.T) {
 	got, err := Generate(Input{
-		Protocol: "hysteria",
-		Address:  "2001:db8::1",
-		Port:     443,
+		Protocol:     "hysteria",
+		Address:      "2001:db8::1",
+		Port:         443,
 		SettingsJSON: `{"version":2,"users":[{"auth":"pass","email":"u@gopanel"}]}`,
-		StreamJSON: `{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/c","keyFile":"/k"}],"alpn":["h3"]}}`,
-		Remark:   "ipv6",
+		StreamJSON:   `{"network":"hysteria","security":"tls","tlsSettings":{"certificates":[{"certificateFile":"/c","keyFile":"/k"}],"alpn":["h3"]}}`,
+		Remark:       "ipv6",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -204,5 +204,25 @@ func TestGenerateHysteria2NoAuth(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("expected error when no auth found")
+	}
+}
+
+func TestGenerateVLESSRealityArrays(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol:         "vless",
+		Address:          "1.2.3.4",
+		Port:             443,
+		CredentialJSON:   `{"id":"11111111-1111-1111-1111-111111111111","flow":"xtls-rprx-vision"}`,
+		StreamJSON:       `{"network":"tcp","security":"reality","realitySettings":{"serverNames":["reality.example.com"],"shortIds":["abcd1234"],"fingerprint":"chrome","spiderX":"/path"}}`,
+		RealityPublicKey: "PBK123",
+		Remark:           "reality",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sni=reality.example.com", "sid=abcd1234", "spx=%2Fpath", "pbk=PBK123"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got %q, missing %q", got, want)
+		}
 	}
 }
