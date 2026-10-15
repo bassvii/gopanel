@@ -1,35 +1,45 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package stats опрашивает Xray StatsService и пишет приращения
-// трафика по пользователям в БД.
+// Package stats опрашивает Xray StatsService через gRPC и пишет
+// приращения трафика по пользователям в БД.
 package stats
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	statsService "github.com/xtls/xray-core/app/stats/command"
 )
+
+// ErrNotConnected — возвращается, если gRPC-клиент ещё не подключён.
+// Сборщик использует это, чтобы не спамить Warning при старте
+// (до первого ApplyConfig соединение не установлено).
+var ErrNotConnected = errors.New("stats client not connected")
 
 // CoreState — минимальный интерфейс, чтобы stats не зависел от core.
 // Реализуется *xray.Core.
 type CoreState interface {
 	IsRunning() bool
+	// Возвращает анонимный интерфейс — совпадает по структуре с
+	// xray.Core.StatsClient(). Так избегаем общего именованного типа,
+	// который тянул бы импорт core/xray в stats.
+	StatsClient() interface {
+		QueryStats(ctx context.Context) ([]*statsService.Stat, error)
+	}
 }
 
 // Collector периодически опрашивает статистику Xray.
 type Collector struct {
-	db        *sql.DB
-	binPath   string
-	apiServer string
-	log       *slog.Logger
-	interval  time.Duration
-	core      CoreState
+	db       *sql.DB
+	log      *slog.Logger
+	interval time.Duration
+	core     CoreState
 
 	mu       sync.Mutex
 	lastSeen map[string]trafficSample // email → последние значения
@@ -40,8 +50,10 @@ type trafficSample struct {
 	down int64
 }
 
-// New создаёт сборщик.
-func New(db *sql.DB, binPath, apiServer string, interval time.Duration, core CoreState, log *slog.Logger) *Collector {
+// New создаёт сборщик. Параметры binPath и apiServer больше не нужны —
+// статистика идёт через gRPC, а не через exec. Оставлены в сигнатуре
+// для совместимости с main.go, но игнорируются.
+func New(db *sql.DB, _ /*binPath*/, _ /*apiServer*/ string, interval time.Duration, core CoreState, log *slog.Logger) *Collector {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -49,12 +61,11 @@ func New(db *sql.DB, binPath, apiServer string, interval time.Duration, core Cor
 		interval = 30 * time.Second
 	}
 	return &Collector{
-		db:        db,
-		binPath:   binPath,
-		apiServer: apiServer,
-		log:       log,
-		interval:  interval,
-		lastSeen:  map[string]trafficSample{},
+		db:       db,
+		log:      log,
+		interval: interval,
+		core:     core,
+		lastSeen: map[string]trafficSample{},
 	}
 }
 
@@ -78,15 +89,23 @@ func (c *Collector) Run(ctx context.Context) {
 
 // pollOnce делает один опрос.
 func (c *Collector) pollOnce(ctx context.Context) {
-	if c.core != nil && !c.core.IsRunning() {
+	if c.core == nil || !c.core.IsRunning() {
 		c.log.Debug("poll skipped: core not running")
 		return
 	}
-	samples, err := c.queryStats(ctx)
+
+	client := c.core.StatsClient()
+	if client == nil {
+		c.log.Debug("poll skipped: stats client not ready")
+		return
+	}
+
+	stats, err := client.QueryStats(ctx)
 	if err != nil {
 		c.log.Warn("stats query failed", "err", err)
 		return
 	}
+	samples := parseStats(stats)
 	c.log.Debug("stats polled", "count", len(samples))
 
 	c.mu.Lock()
@@ -99,15 +118,10 @@ func (c *Collector) pollOnce(ctx context.Context) {
 		var deltaUp, deltaDown int64
 		switch {
 		case !ok:
-			// Первый опрос. Если счётчики ненулевые — значит,
-			// трафик уже прошёл с момента старта Xray. Записываем его.
-			// Если нулевые — просто фиксируем базу.
 			deltaUp = sample.up
 			deltaDown = sample.down
 		case sample.up < last.up || sample.down < last.down:
 			// Сброс счётчиков (перезапуск Xray).
-			// Считаем, что сброс произошёл в ноль, значит
-			// текущее значение — это новое приращение с момента сброса.
 			deltaUp = sample.up
 			deltaDown = sample.down
 		default:
@@ -126,65 +140,33 @@ func (c *Collector) pollOnce(ctx context.Context) {
 	}
 }
 
-// queryStats запускает `xray api statsquery` и парсит JSON.
-func (c *Collector) queryStats(ctx context.Context) (map[string]trafficSample, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, c.binPath,
-		"api", "statsquery",
-		"--server="+c.apiServer,
-		"-pattern", "user>>>",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("statsquery: %w", err)
-	}
-	return parseStats(out)
-}
-
-// parseStats разбирает JSON-ответ statsquery.
-// Формат:
-//
-//	{"stat":[{"name":"user>>>email>>>traffic>>>uplink","value":123}, ...]}
-func parseStats(data []byte) (map[string]trafficSample, error) {
-	var resp struct {
-		Stat []struct {
-			Name  string `json:"name"`
-			Value *int64 `json:"value,omitempty"`
-		} `json:"stat"`
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("parse stats: %w", err)
-	}
-
+// parseStats разбирает []*statsService.Stat в map[email]trafficSample.
+// Имена: user>>>email>>>traffic>>>uplink/downlink.
+func parseStats(stats []*statsService.Stat) map[string]trafficSample {
 	out := map[string]trafficSample{}
-	for _, s := range resp.Stat {
-		// name: user>>>email>>>traffic>>>uplink
-		parts := strings.Split(s.Name, ">>>")
+	for _, s := range stats {
+		if s == nil {
+			continue
+		}
+		parts := strings.Split(s.GetName(), ">>>")
 		if len(parts) != 4 || parts[0] != "user" || parts[2] != "traffic" {
 			continue
 		}
 		email := parts[1]
 		direction := parts[3]
 
-		var value int64
-		if s.Value != nil {
-			value = *s.Value
-		}
-
 		sample := out[email]
 		switch direction {
 		case "uplink":
-			sample.up = value
+			sample.up = s.GetValue()
 		case "downlink":
-			sample.down = value
+			sample.down = s.GetValue()
 		default:
 			continue
 		}
 		out[email] = sample
 	}
-	return out, nil
+	return out
 }
 
 // recordTraffic пишет приращение в таблицу traffic и увеличивает
@@ -199,7 +181,6 @@ func (c *Collector) recordTraffic(ctx context.Context, email string, ts, up, dow
 	var userID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE email = ?`, email).Scan(&userID)
 	if err == sql.ErrNoRows {
-		// Пользователь удалён, но Xray ещё помнит его счётчики. Игнорируем.
 		return nil
 	}
 	if err != nil {

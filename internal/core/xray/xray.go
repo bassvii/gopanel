@@ -7,13 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	statsService "github.com/xtls/xray-core/app/stats/command"
 )
 
 // ErrBinaryNotFound возвращается, если бинарник Xray недоступен.
@@ -25,6 +27,7 @@ type Core struct {
 	configPath string
 	log        *slog.Logger
 	process    *Process
+	stats      *StatsClient
 }
 
 // New создаёт Core, проверяя наличие бинарника.
@@ -46,6 +49,7 @@ func New(binPath, configPath string, log *slog.Logger) (*Core, error) {
 		configPath: configPath,
 		log:        log,
 		process:    NewProcess(binPath, configPath, log),
+		stats:      NewStatsClient("127.0.0.1:10085", log),
 	}, nil
 }
 
@@ -137,13 +141,16 @@ func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
 		return err
 	}
 
-	// 4. Убедиться, что процесс жив через паузу. Если Xray упал
-	// сразу после старта (например, порт занят), supervise уже
-	// выставил IsRunning=false. Даём 1.5 секунды, чтобы это
-	// отследить, и возвращаем ошибку наверх — UI должен знать,
-	// что конфиг не применился, а не показывать «успех».
 	if err := c.waitStarted(1500 * time.Millisecond); err != nil {
 		return err
+	}
+
+	// Xray только что перезапустился — старое gRPC-соединение
+	// (если было) порвано. Переподключаемся.
+	if err := c.stats.Connect(ctx); err != nil {
+		// Не фатально: Xray работает, просто статистика будет
+		// недоступна до следующей попытки. Логируем.
+		c.log.Warn("stats grpc connect failed", "err", err)
 	}
 	return nil
 }
@@ -170,8 +177,8 @@ func (c *Core) waitStarted(timeout time.Duration) error {
 func tempConfigPath(configPath string) string {
 	dir := filepath.Dir(configPath)
 	base := filepath.Base(configPath)
-	ext := filepath.Ext(base)          // ".json"
-	name := strings.TrimSuffix(base, ext)  // "gopanel-xray"
+	ext := filepath.Ext(base)             // ".json"
+	name := strings.TrimSuffix(base, ext) // "gopanel-xray"
 	return filepath.Join(dir, name+".tmp"+ext)
 }
 
@@ -182,6 +189,7 @@ func (c *Core) Start(ctx context.Context) error {
 
 // Stop останавливает Xray.
 func (c *Core) Stop() error {
+	_ = c.stats.Close()
 	return c.process.Stop()
 }
 
@@ -234,6 +242,17 @@ func (c *Core) GenerateX25519(ctx context.Context) (X25519KeyPair, error) {
 // UptimeSeconds возвращает uptime Xray в секундах.
 func (c *Core) UptimeSeconds() int64 {
 	return c.process.UptimeSeconds()
+}
+
+// StatsClient возвращает gRPC-клиент StatsService.
+// Используется сборщиком статистики (internal/stats).
+//
+// Возвращаем интерфейс, а не *StatsClient, чтобы stats не зависел
+// от конкретного типа (и не импортировал core/xray).
+func (c *Core) StatsClient() interface {
+	QueryStats(ctx context.Context) ([]*statsService.Stat, error)
+} {
+	return c.stats
 }
 
 // VlessEncResult — результат генерации VLESS Encryption.
