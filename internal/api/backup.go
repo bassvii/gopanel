@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -57,6 +58,12 @@ func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := backup.BackupName()
+
+	// Большая база может отдаваться дольше 30 секунд — продлеваем
+	// дедлайн записи только для этой ручки.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(6 * time.Minute))
+	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)

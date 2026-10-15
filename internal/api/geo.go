@@ -5,10 +5,11 @@ package api
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bassvii/gopanel/internal/audit"
-	"github.com/bassvii/gopanel/internal/system"
 	"github.com/bassvii/gopanel/internal/notify"
+	"github.com/bassvii/gopanel/internal/system"
 )
 
 // handleGeoStatus — GET /system/geo/status
@@ -25,6 +26,11 @@ func (s *Server) handleGeoStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleGeoUpdate — POST /system/geo/update
 func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
+	// Geo-файлы могут качаться до 5 минут. Дефолтный WriteTimeout
+	// сервера (30с) обрывает ответ. Продлеваем только для этой ручки.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(6 * time.Minute))
+	}
 	sess, ok := s.requireSession(w, r)
 	if !ok {
 		return
