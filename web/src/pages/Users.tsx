@@ -7,6 +7,7 @@ import {
   updateUser,
   deleteUser,
   getUserLinks,
+  resetUserTraffic,
   type CreateUserInput,
 } from '../api/users'
 import { ApiError } from '../api/client'
@@ -18,7 +19,7 @@ import { QRModal } from '../components/QRModal'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
-import { Plus, Pencil, Trash2, Link2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Link2, RotateCcw } from 'lucide-react'
 import { Button, Badge } from '../components/ui'
 import { ErrorBanner } from '../components/ErrorBanner'
 
@@ -64,6 +65,27 @@ export function Users() {
       toast.success('Пользователь удалён')
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Ошибка удаления')
+    }
+  }
+
+  async function handleResetTraffic(u: User) {
+    const ok = await confirm({
+      title: 'Сбросить трафик?',
+      message: `Пользователь «${u.name}» получит used_bytes = 0 и будет включён обратно (если срок не истёк).`,
+      confirmLabel: 'Сбросить',
+    })
+    if (!ok) return
+
+    try {
+      const res = await resetUserTraffic(u.id)
+      if (!res.applied && res.apply_error) {
+        toast.error(`Сброшено, но Xray не применил конфиг: ${res.apply_error}`)
+      } else {
+        toast.success('Трафик сброшен')
+      }
+      await reload()
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка сброса')
     }
   }
 
@@ -152,6 +174,16 @@ export function Users() {
                         >
                           Ссылки
                         </Button>
+                        {u.used_bytes > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleResetTraffic(u)}
+                          icon={<RotateCcw size={14} />}
+                        >
+                          Сбросить
+                        </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"

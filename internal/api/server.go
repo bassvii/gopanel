@@ -292,6 +292,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE "+s.secret+"/users/{id}", s.handleUser)
 	s.mux.HandleFunc("POST "+s.secret+"/users/{id}/inbounds", s.handleUserInbounds)
 	s.mux.HandleFunc("GET "+s.secret+"/users/{id}/links", s.handleUserLinks)
+	s.mux.HandleFunc("POST "+s.secret+"/users/{id}/inbounds", s.handleUserInbounds)
+	s.mux.HandleFunc("GET "+s.secret+"/users/{id}/links", s.handleUserLinks)
+	s.mux.HandleFunc("POST "+s.secret+"/users/{id}/reset-traffic", s.handleUserResetTraffic)
 
 	// --- Stats ---
 	s.mux.HandleFunc("GET "+s.secret+"/stats/summary", s.handleStatsSummary)

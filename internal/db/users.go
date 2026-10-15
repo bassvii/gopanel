@@ -171,3 +171,34 @@ func DeleteUser(conn *sql.DB, id int64) error {
 	_, err := conn.Exec(`DELETE FROM users WHERE id = ?`, id)
 	return err
 }
+
+// ResetUsedBytes обнуляет used_bytes пользователя. Если срок действия
+// не истёк и quota_bytes > 0 — включает пользователя обратно (иначе
+// он останется отключённым из-за лимита). См. #9 нового аудита.
+func ResetUsedBytes(conn *sql.DB, id int64) error {
+	if id == 0 {
+		return errors.New("id is required")
+	}
+	res, err := conn.Exec(
+		`UPDATE users
+		 SET used_bytes = 0,
+		     enabled = CASE
+		         WHEN expires_at = 0 OR expires_at > strftime('%s','now')
+		         THEN 1
+		         ELSE enabled
+		     END
+		 WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("reset used_bytes: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

@@ -9,6 +9,7 @@ const labels: Record<string, string> = {
   user_create: 'Создан пользователь',
   user_update: 'Изменён пользователь',
   user_delete: 'Удалён пользователь',
+  user_reset_traffic: 'Сброшен трафик',
   user_inbound_attach: 'Привязан инбаунд к пользователю',
   user_inbound_detach: 'Отвязан инбаунд от пользователя',
   inbound_create: 'Создан инбаунд',

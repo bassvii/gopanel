@@ -6,8 +6,8 @@ package audit
 import (
 	"database/sql"
 	"fmt"
-	"time"
 	"strings"
+	"time"
 )
 
 // Event — одно действие в журнале.
@@ -23,13 +23,13 @@ type Event struct {
 
 // Константы действий. Используются в коде панели.
 const (
-	ActionLogin          = "login"
-	ActionLogout         = "logout"
-	ActionLoginFailed    = "login_failed"
-	ActionTOTPEnabled    = "totp_enabled"
-	ActionTOTPDisabled   = "totp_disabled"
-	ActionRecoveryUsed   = "recovery_code_used"
-	ActionPasswordReset  = "password_reset"
+	ActionLogin         = "login"
+	ActionLogout        = "logout"
+	ActionLoginFailed   = "login_failed"
+	ActionTOTPEnabled   = "totp_enabled"
+	ActionTOTPDisabled  = "totp_disabled"
+	ActionRecoveryUsed  = "recovery_code_used"
+	ActionPasswordReset = "password_reset"
 )
 
 // Labels — русские названия для действий.
@@ -47,6 +47,7 @@ var Labels = map[string]string{
 	"user_create":         "Создан пользователь",
 	"user_update":         "Изменён пользователь",
 	"user_delete":         "Удалён пользователь",
+	"user_reset_traffic":  "Сброшен трафик",
 	"user_inbound_attach": "Привязан инбаунд к пользователю",
 	"user_inbound_detach": "Отвязан инбаунд от пользователя",
 	"inbound_create":      "Создан инбаунд",
@@ -81,7 +82,7 @@ func Log(conn *sql.DB, adminID int64, action, target, ip string) error {
 type ListParams struct {
 	Limit   int
 	Offset  int
-	Query   string  // поиск по action, action_ru, target, ip
+	Query   string // поиск по action, action_ru, target, ip
 	AdminID int64
 }
 

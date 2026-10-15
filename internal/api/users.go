@@ -423,3 +423,49 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(msg, "UNIQUE constraint failed") ||
 		strings.Contains(msg, "constraint failed: UNIQUE")
 }
+
+// handleUserResetTraffic — POST /users/{id}/reset-traffic.
+//
+// Обнуляет used_bytes пользователя. Если он был отключён по лимиту
+// и срок не истёк — включает обратно. Конфиг Xray применяется
+// синхронно (applied/apply_error в ответе). См. #9 нового аудита.
+func (s *Server) handleUserResetTraffic(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.ResetUsedBytes(s.db, id); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		s.log.Error("reset used_bytes failed", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "internal error",
+		})
+		return
+	}
+
+	_ = audit.Log(s.db, sess.AdminID, "user_reset_traffic", idStr, s.clientIP(r))
+	resp := map[string]any{"ok": true, "applied": true}
+	if err := s.applyNow(); err != nil {
+		resp["applied"] = false
+		resp["apply_error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
+}

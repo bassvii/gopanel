@@ -54,3 +54,10 @@ export async function getUserLinks(userId: number, address: string, withQR = fal
   const res = await request<{ links: LinkEntry[] }>(`/users/${userId}/links?${qs}`)
   return res.links ?? []
 }
+
+export async function resetUserTraffic(id: number): Promise<{ ok: boolean; applied: boolean; apply_error?: string }> {
+  return request(`/users/${id}/reset-traffic`, {
+    method: 'POST',
+    withCSRF: true,
+  })
+}
