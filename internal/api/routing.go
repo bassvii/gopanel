@@ -234,6 +234,10 @@ func (s *Server) handleRoutingRuleMoveRoute(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := db.MoveRoutingRule(s.db, id, dir); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		s.log.Error("move routing rule failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
