@@ -50,18 +50,26 @@ func TestGenerateVLESSTLS(t *testing.T) {
 
 func TestGenerateVLESSTLSReality(t *testing.T) {
 	got, err := Generate(Input{
-		Protocol:         "vless",
-		Address:          "1.2.3.4",
-		Port:             443,
-		CredentialJSON:   `{"id":"11111111-1111-1111-1111-111111111111","flow":"xtls-rprx-vision"}`,
-		StreamJSON:       `{"network":"tcp","security":"reality","realitySettings":{"serverName":"reality.example.com","shortId":"abcd1234","fingerprint":"chrome"}}`,
+		Protocol:       "vless",
+		Address:        "1.2.3.4",
+		Port:           443,
+		CredentialJSON: `{"id":"11111111-1111-1111-1111-111111111111","flow":"xtls-rprx-vision"}`,
+		// serverNames и shortIds — массивы, как их хранит фронт.
+		StreamJSON:       `{"network":"tcp","security":"reality","realitySettings":{"serverNames":["reality.example.com"],"shortIds":["abcd1234"],"fingerprint":"chrome","spiderX":"/path"}}`,
 		RealityPublicKey: "PBK123",
 		Remark:           "reality",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"security=reality", "pbk=PBK123", "sid=abcd1234", "fp=chrome", "sni=reality.example.com"} {
+	for _, want := range []string{
+		"security=reality",
+		"pbk=PBK123",
+		"sid=abcd1234",
+		"sni=reality.example.com",
+		"spx=%2Fpath",
+		"fp=chrome",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("got %q, missing %q", got, want)
 		}
