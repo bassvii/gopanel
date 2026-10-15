@@ -41,17 +41,18 @@ export async function getTOTPStatus(): Promise<boolean> {
   return res.enabled ?? false
 }
 
-export async function setupTOTP(): Promise<TOTPSetupResponse> {
+export async function setupTOTP(password: string): Promise<TOTPSetupResponse> {
   return request<TOTPSetupResponse>('/2fa/setup', {
     method: 'POST',
+    body: { password },
     withCSRF: true,
   })
 }
 
-export async function enableTOTP(code: string): Promise<TOTPEnableResponse> {
+export async function enableTOTP(password: string, code: string): Promise<TOTPEnableResponse> {
   return request<TOTPEnableResponse>('/2fa/enable', {
     method: 'POST',
-    body: { code },
+    body: { password, code },
     withCSRF: true,
   })
 }

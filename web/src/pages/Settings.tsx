@@ -365,6 +365,8 @@ function TOTPSection() {
   const [disableCode, setDisableCode] = useState('')
   const [disableError, setDisableError] = useState('')
   const { confirm, dialog } = useConfirm()
+  const [enablePassword, setEnablePassword] = useState('')
+
 
   async function reload() {
     setLoading(true)
@@ -383,10 +385,14 @@ function TOTPSection() {
   }, [])
 
   async function handleSetup() {
+    if (!enablePassword) {
+      setError('Введите пароль администратора')
+      return
+    }
     setError('')
     setBusy(true)
     try {
-      setSetupData(await setupTOTP())
+      setSetupData(await setupTOTP(enablePassword))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Ошибка настройки 2FA')
     } finally {
@@ -395,6 +401,10 @@ function TOTPSection() {
   }
 
   async function handleEnable() {
+    if (!enablePassword) {
+      setError('Введите пароль администратора')
+      return
+    }
     if (!code) {
       setError('Введите код из приложения')
       return
@@ -402,7 +412,7 @@ function TOTPSection() {
     setError('')
     setBusy(true)
     try {
-      const res = await enableTOTP(code)
+      const res = await enableTOTP(enablePassword, code)
       if (!res.ok) {
         setError(res.error || 'Неверный код')
         return
@@ -410,6 +420,7 @@ function TOTPSection() {
       setRecoveryCodes(res.recovery_codes ?? [])
       setSetupData(null)
       setCode('')
+      setEnablePassword('')
       setEnabled(true)
       toast.success('2FA включена')
     } catch (err) {
@@ -609,10 +620,22 @@ function TOTPSection() {
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3 max-w-md">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             2FA не включена. Рекомендуется включить для защиты панели.
           </p>
+          <label className="block">
+            <span className="text-sm text-neutral-400 block mb-1">
+              Пароль администратора
+            </span>
+            <input
+              type="password"
+              value={enablePassword}
+              onChange={(e) => setEnablePassword(e.target.value)}
+              autoComplete="current-password"
+              className="input"
+            />
+          </label>
           {error && <div className="text-sm text-red-400">{error}</div>}
           <Button onClick={handleSetup} disabled={busy}>
             {busy ? 'Подготовка...' : 'Включить 2FA'}

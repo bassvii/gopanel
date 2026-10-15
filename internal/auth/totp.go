@@ -43,27 +43,13 @@ func GenerateTOTPSecret(username string) (string, string, error) {
 }
 
 // BuildOTPAuthURL собирает otpauth:// URL по существующему секрету.
-// Нужно для QR: секрет не передаётся в query, а читается из БД
-// и превращается в URL на сервере. См. P3-5 третьего аудита.
+//
+// ВАЖНО: вызываем buildOTPAuthURLManual напрямую, БЕЗ totp.Generate.
+// totp.Generate кодирует переданный Secret в base32 ещё раз, и QR
+// получает другой секрет, чем в БД. Коды из приложения не совпадают.
+// См. #5 нового аудита.
 func BuildOTPAuthURL(username, secret string) (string, error) {
-	// pquerna/otp умеет генерировать URL из готового секрета через
-	// NewKeyFromURL — но проще собрать вручную через GenerateOpts
-	// с фиксированным секретом. Используем sameOpts.
-	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      Issuer,
-		AccountName: username,
-		Period:      30,
-		Secret:      []byte(secret), // уже base32-строка → передаём как байты
-		SecretSize:  20,
-		Digits:      otp.DigitsSix,
-		Algorithm:   otp.AlgorithmSHA1,
-	})
-	if err != nil {
-		// pquerna/otp не всегда принимает base32-строку как Secret.
-		// Fallback — собрать URL вручную.
-		return buildOTPAuthURLManual(username, secret), nil
-	}
-	return key.URL(), nil
+	return buildOTPAuthURLManual(username, secret), nil
 }
 
 // buildOTPAuthURLManual собирает otpauth URL вручную, если
