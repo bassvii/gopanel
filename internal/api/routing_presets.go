@@ -191,10 +191,15 @@ func (s *Server) handleRoutingPresetApply(w http.ResponseWriter, r *http.Request
 	}
 
 	_ = audit.Log(s.db, sess.AdminID, "routing_preset_apply", name, s.clientIP(r))
-	s.requestReload()
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":      true,
 		"created": created,
 		"preset":  name,
-	})
+		"applied": true,
+	}
+	if err := s.applyNow(); err != nil {
+		resp["applied"] = false
+		resp["apply_error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

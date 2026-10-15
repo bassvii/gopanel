@@ -16,9 +16,11 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bassvii/gopanel/internal/core/xray"
+	"github.com/bassvii/gopanel/internal/notify"
 	"github.com/bassvii/gopanel/internal/system"
 )
 
@@ -44,6 +46,14 @@ type Server struct {
 	// trustedNets — распарсенные CIDR'ы из cfg.TrustedProxies.
 	// Пустой, если доверенных прокси нет.
 	trustedNets []*net.IPNet
+
+	// applier — замыкание, которое собирает конфиг Xray из БД
+	// и применяет его. Устанавливается из main.go через SetApplier.
+	// Возвращает ошибку, если xray -test упал или процесс не стартовал.
+	applier func() error
+	// applyMu сериализует вызовы applier: одновременно два apply
+	// (например, из двух хендлеров) не должны запускать Xray.
+	applyMu sync.Mutex
 }
 
 // Config — параметры сервера.
@@ -149,11 +159,42 @@ func (s *Server) ReloadSignal() chan<- struct{} {
 }
 
 // requestReload отправляет сигнал перегенерировать конфиг Xray.
+// Оставлено для обратной совместимости — некоторые места могут
+// ещё использовать асинхронный путь. Новый код использует
+// applyNow, который возвращает ошибку.
 func (s *Server) requestReload() {
 	select {
 	case s.reloadCh <- struct{}{}:
 	default:
 	}
+}
+
+// SetApplier устанавливает замыкание, которое собирает конфиг Xray
+// из БД и применяет его (с проверкой xray -test). Вызывается из
+// main.go один раз при старте.
+func (s *Server) SetApplier(f func() error) {
+	s.applier = f
+}
+
+// applyNow применяет конфиг синхронно и возвращает ошибку, если
+// конфиг невалиден или Xray не стартовал. Используется в хендлерах,
+// чтобы UI знал, применился ли конфиг, а не показывал «успех»
+// при упавшем xray -test. См. #1 нового аудита.
+func (s *Server) applyNow() error {
+	if s.applier == nil {
+		// Applier не установлен — падаем на асинхронный путь.
+		s.requestReload()
+		return nil
+	}
+	s.applyMu.Lock()
+	defer s.applyMu.Unlock()
+
+	if err := s.applier(); err != nil {
+		s.log.Error("apply config failed", "err", err)
+		notify.XrayFailed(s.db, s.log, err.Error())
+		return err
+	}
+	return nil
 }
 
 // Start запускает сервер и блокируется до Stop или ошибки.

@@ -334,6 +334,18 @@ func runServe(args []string) error {
 	}
 	srv.SetSystemCollector(sysCollector, cfg.DBPath, time.Now())
 
+	// Applier — синхронное применение конфига с проверкой. Хендлеры
+	// вызывают его и возвращают ошибку в JSON. ctx — от signal,
+	// живёт столько же, сколько панель (важно: не HTTP-контекст,
+	// иначе Xray умрёт вместе с запросом). См. #1 нового аудита.
+	srv.SetApplier(func() error {
+		data, err := buildConfigFromDB(conn, log)
+		if err != nil {
+			return err
+		}
+		return core.ApplyConfig(ctx, data)
+	})
+
 	// 8. Вшитый фронтенд.
 	if webFS := gopanel.WebFS(); webFS != nil {
 		srv.SetWebFS(webFS)

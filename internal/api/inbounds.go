@@ -137,8 +137,12 @@ func (s *Server) handleInbounds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "inbound_create", p.Tag, s.clientIP(r))
-		s.requestReload()
-		writeJSON(w, http.StatusOK, map[string]any{"id": id})
+		resp := map[string]any{"id": id, "applied": true}
+		if err := s.applyNow(); err != nil {
+			resp["applied"] = false
+			resp["apply_error"] = err.Error()
+		}
+		writeJSON(w, http.StatusOK, resp)
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -207,8 +211,12 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "inbound_update", p.Tag, s.clientIP(r))
-		s.requestReload()
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		resp := map[string]any{"ok": true, "applied": true}
+		if err := s.applyNow(); err != nil {
+			resp["applied"] = false
+			resp["apply_error"] = err.Error()
+		}
+		writeJSON(w, http.StatusOK, resp)
 
 	case http.MethodDelete:
 		if !s.requireCSRF(w, r, sess) {
@@ -219,8 +227,12 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = audit.Log(s.db, sess.AdminID, "inbound_delete", idStr, s.clientIP(r))
-		s.requestReload()
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		resp := map[string]any{"ok": true, "applied": true}
+		if err := s.applyNow(); err != nil {
+			resp["applied"] = false
+			resp["apply_error"] = err.Error()
+		}
+		writeJSON(w, http.StatusOK, resp)
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

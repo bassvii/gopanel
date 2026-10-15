@@ -64,11 +64,15 @@ func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
 	notify.GeoUpdated(s.db, s.log, updated)
 
 	// Перезапустить Xray, чтобы он подхватил новые файлы.
-	s.requestReload()
-
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":      true,
 		"updated": updated,
 		"status":  system.GetGeoStatus(),
-	})
+		"applied": true,
+	}
+	if err := s.applyNow(); err != nil {
+		resp["applied"] = false
+		resp["apply_error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
