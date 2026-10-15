@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -14,6 +15,36 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+// tailWriter хранит последние N байт вывода. Нужен, чтобы поймать
+// текст ошибки Xray («address already in use», «permission denied»)
+// из stderr — cmd.Wait() возвращает только «exit status 1», а сам
+// текст уходит в поток.
+type tailWriter struct {
+	mu  sync.Mutex
+	buf []byte
+	max int
+}
+
+func newTailWriter(max int) *tailWriter {
+	return &tailWriter{max: max}
+}
+
+func (t *tailWriter) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = t.buf[len(t.buf)-t.max:]
+	}
+	return len(p), nil
+}
+
+func (t *tailWriter) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.buf)
+}
 
 // Ошибки процесса.
 var (
@@ -33,10 +64,11 @@ type Process struct {
 	done     chan struct{}
 	lastErr  error
 	restarts int
-
+	tw       *tailWriter
 	// Атомики — чтобы читать без мьютекса.
 	running   atomic.Bool
 	startedAt atomic.Int64 // Unix-время старта, 0 если не запущен
+
 }
 
 // NewProcess создаёт управляющий объект (но не запускает).
@@ -88,17 +120,16 @@ func (p *Process) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 
 	cmd := exec.CommandContext(runCtx, p.binPath, "run", "-c", p.configPath)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	// На Linux Pdeathsig=SIGTERM: если панель упадёт нештатно,
-	// ядро пошлёт Xray SIGTERM и он сам остановится, освободив
-	// порты. На других ОС — nil (без эффекта).
+	tw := newTailWriter(4096)
+	p.mu.Lock()
+	p.tw = tw
+	p.mu.Unlock()
+	cmd.Stdout = io.MultiWriter(os.Stderr, tw)
+	cmd.Stderr = io.MultiWriter(os.Stderr, tw)
 	cmd.SysProcAttr = sysProcAttr()
-	// Xray по умолчанию ищет geosite.dat/geoip.dat в
-	// /usr/local/share/xray. Мы храним их рядом с данными панели
-	// (см. P2-1 третьего аудита) — сообщаем Xray через переменную
-	// XRAY_LOCATION_ASSET. Плюс пробрасываем остальное окружение.
-	cmd.Env = append(os.Environ(),
+	// Окружение без секретов панели: GOPANEL_ADMIN_PASSWORD
+	// не должен попадать в процесс ядра. См. #10 нового аудита.
+	cmd.Env = append(scrubbedEnv(),
 		"XRAY_LOCATION_ASSET="+xrayAssetDir(),
 	)
 
@@ -164,6 +195,11 @@ func (p *Process) supervise(ctx context.Context, cmd *exec.Cmd) {
 	close(done)
 	restarts := p.restarts
 	uptime := time.Now().Unix() - p.startedAt.Load()
+	var tail string
+	if p.tw != nil {
+		tail = p.tw.String()
+	}
+	p.tw = nil
 	p.mu.Unlock()
 
 	p.running.Store(false)
@@ -184,20 +220,33 @@ func (p *Process) supervise(ctx context.Context, cmd *exec.Cmd) {
 		p.mu.Unlock()
 	}
 
-	// Фатальные ошибки — не перезапускаем.
+	// Фатальные ошибки — ищем в хвосте stderr, а не в err.Error():
+	// cmd.Wait() возвращает только «exit status 1», а текст
+	// («address already in use», «permission denied») идёт в поток.
+	// См. #10 нового аудита.
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "address already in use") ||
-			strings.Contains(msg, "bind:") ||
-			strings.Contains(msg, "permission denied") {
-			p.log.Error("xray cannot start (fatal error), giving up", "err", err)
+		if strings.Contains(tail, "address already in use") ||
+			strings.Contains(tail, "bind:") ||
+			strings.Contains(tail, "permission denied") {
+			p.log.Error("xray cannot start (fatal error), giving up",
+				"err", err, "stderr_tail", tail)
 			return
 		}
 	}
 
+	// Ограничиваем число перезапусков подряд: 10 попыток и сдаёмся.
+	// Иначе при системной проблеме (например, порт занят другим
+	// процессом, но текст ошибки не попал в tail) Xray будет
+	// перезапускаться бесконечно. См. #10 нового аудита.
+	const maxRestarts = 10
+	if restarts >= maxRestarts {
+		p.log.Error("xray crashed too many times, giving up",
+			"restarts", restarts)
+		return
+	}
+
 	p.log.Warn("xray exited unexpectedly", "err", err, "restarts", restarts)
 
-	// Экспоненциальная задержка: 1s, 2s, 4s, 8s, максимум 30s.
 	delay := time.Duration(1<<min(restarts, 5)) * time.Second
 	if delay > 30*time.Second {
 		delay = 30 * time.Second
@@ -238,4 +287,19 @@ func xrayAssetDir() string {
 	// Резервный вариант. Если dbPath не известен на этом уровне,
 	// используем тот же дефолт, что и system.DefaultGeoDir.
 	return "/var/lib/gopanel/xray"
+}
+
+// scrubbedEnv возвращает os.Environ() без переменных панели,
+// которые не должны утекать в дочерний процесс Xray.
+// Сейчас это GOPANEL_ADMIN_PASSWORD.
+func scrubbedEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "GOPANEL_ADMIN_PASSWORD=") {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
