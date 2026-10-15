@@ -4,7 +4,6 @@ package xray
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -27,8 +26,6 @@ type StatsClient struct {
 	conn *grpc.ClientConn
 	cli  statsService.StatsServiceClient
 }
-
-var errNotConnected = errors.New("stats client not connected")
 
 // NewStatsClient создаёт объект, но НЕ подключается.
 func NewStatsClient(addr string, log *slog.Logger) *StatsClient {
