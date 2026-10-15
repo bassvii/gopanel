@@ -6,6 +6,7 @@ import { ApiError } from '../api/client'
 import { Button } from '../components/ui'
 import { TableSkeleton } from '../components/Skeleton'
 import type { AuditEntry } from '../api/types'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 const PAGE_SIZE = 50
 
@@ -27,18 +28,23 @@ export function Audit() {
     return () => clearTimeout(t)
   }, [query])
 
-  useEffect(() => {
+  async function load() {
     setLoading(true)
     setError('')
-    getAudit(PAGE_SIZE, offset, debouncedQuery)
-      .then((res) => {
-        setEntries(res.entries)
-        setTotal(res.total)
-      })
-      .catch((err) => {
-        setError(err instanceof ApiError ? err.message : 'Ошибка загрузки')
-      })
-      .finally(() => setLoading(false))
+    try {
+      const res = await getAudit(PAGE_SIZE, offset, debouncedQuery)
+      setEntries(res.entries ?? [])
+      setTotal(res.total ?? 0)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Ошибка загрузки')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offset, debouncedQuery])
 
   const pages = Math.ceil(total / PAGE_SIZE)
@@ -84,15 +90,12 @@ export function Audit() {
       </div>
 
       {error && (
-        <div
-          className="mb-4 text-sm rounded-lg px-3 py-2"
-          style={{
-            color: 'var(--danger)',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-          }}
-        >
-          {error}
+        <div className="mb-4">
+          <ErrorBanner
+            title="Не удалось загрузить журнал аудита"
+            message={error}
+            onRetry={load}
+          />
         </div>
       )}
 

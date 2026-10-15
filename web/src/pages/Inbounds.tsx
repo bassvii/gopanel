@@ -21,6 +21,7 @@ import { TableSkeleton } from '../components/Skeleton'
 import { Plus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { Button, Badge, Toggle, Select } from '../components/ui'
 import { generateX25519, generateShortID, generateVlessEnc, generateTLSCert } from '../api/xray'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 // Пресеты протоколов — предзаполненные формы.
 interface Preset {
@@ -220,15 +221,12 @@ export function Inbounds() {
         </div>
 
         {error && (
-          <div
-            className="mb-4 text-sm rounded-lg px-3 py-2"
-            style={{
-              color: 'var(--danger)',
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.2)',
-            }}
-          >
-            {error}
+          <div className="mb-4">
+            <ErrorBanner
+              title="Не удалось загрузить инбаунды"
+              message={error}
+              onRetry={reload}
+            />
           </div>
         )}
 
