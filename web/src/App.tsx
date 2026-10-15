@@ -10,6 +10,7 @@ import { Settings } from './pages/Settings'
 import { me } from './api/auth'
 import { RouterProvider, useRouter, type Route } from './lib/router'
 import { Routing } from './pages/Routing'
+import { NotFound } from './pages/NotFound'
 
 const titles: Record<Route['name'], string> = {
   login: 'Вход',
@@ -36,15 +37,19 @@ function Page({ route }: { route: Route['name'] }) {
       return <Audit />
     case 'settings':
       return <Settings />
-    default:
+    case 'traffic':
+      // Раздел «Трафик» ещё не реализован — показываем заглушку «скоро».
       return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-white mb-2">{titles[route]}</h2>
+            <h2 className="text-2xl font-bold text-white mb-2">Трафик</h2>
             <p className="text-sm text-neutral-500">Скоро здесь будет раздел</p>
           </div>
         </div>
       )
+    default:
+      // Неизвестный route — 404.
+      return <NotFound />
   }
 }
 

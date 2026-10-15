@@ -20,6 +20,7 @@ import { useConfirm } from '../hooks/useConfirm'
 import { TableSkeleton } from '../components/Skeleton'
 import { Plus, Pencil, Trash2, Link2 } from 'lucide-react'
 import { Button, Badge } from '../components/ui'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 export function Users() {
   const [users, setUsers] = useState<User[]>([])
@@ -84,15 +85,12 @@ export function Users() {
         </div>
 
         {error && (
-          <div
-            className="mb-4 text-sm rounded-lg px-3 py-2"
-            style={{
-              color: 'var(--danger)',
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.2)',
-            }}
-          >
-            {error}
+          <div className="mb-4">
+            <ErrorBanner
+              title="Не удалось загрузить пользователей"
+              message={error}
+              onRetry={reload}
+            />
           </div>
         )}
 
