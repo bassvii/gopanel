@@ -134,12 +134,46 @@ func BuildConfig(in BuildInput) (*Config, error) {
 			return nil, fmt.Errorf("inbound %q sniffing: %w", in.Tag, err)
 		}
 
-		clients, err := buildClients(in.Protocol, in.Users)
-		if err != nil {
-			return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
-		}
-		if len(clients) > 0 {
-			settings["clients"] = clients
+		switch in.Protocol {
+		case "socks", "http":
+			// SOCKS/HTTP читают settings.accounts[{user, pass}],
+			// а не settings.clients. Ключ "pass", не "password".
+			// См. #2 нового аудита.
+			accts, err := buildSOCKSAccounts(in.Users, settings)
+			if err != nil {
+				return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
+			}
+			if len(accts) == 0 {
+				return nil, fmt.Errorf("inbound %q (%s): нет аккаунтов — открытый прокси",
+					in.Tag, in.Protocol)
+			}
+			settings["accounts"] = accts
+			if in.Protocol == "socks" {
+				settings["auth"] = "password"
+			}
+			// Убираем "users" из settings, если админ его туда положил
+			// вручную — Xray ждёт "accounts".
+			delete(settings, "users")
+
+		case "hysteria":
+			// Hysteria в Xray читает settings.users[{auth, email}],
+			// а панель пишет clients. См. #2 нового аудита.
+			hyUsers, err := buildHysteriaUsers(in.Users)
+			if err != nil {
+				return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
+			}
+			if len(hyUsers) > 0 {
+				settings["users"] = hyUsers
+			}
+
+		default:
+			clients, err := buildClients(in.Protocol, in.Users)
+			if err != nil {
+				return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
+			}
+			if len(clients) > 0 {
+				settings["clients"] = clients
+			}
 		}
 
 		cfg.Inbounds = append(cfg.Inbounds, Inbound{
@@ -432,4 +466,89 @@ func parseJSONArray(s string) ([]string, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// buildSOCKSAccounts собирает settings.accounts для SOCKS/HTTP.
+// Xray читает именно этот ключ, а не "clients". Поля "user" и "pass"
+// (не "password"). См. #2 нового аудита.
+func buildSOCKSAccounts(users []UserInput, settings map[string]any) ([]map[string]string, error) {
+	out := make([]map[string]string, 0, len(users))
+	for _, u := range users {
+		if !u.Enabled {
+			continue
+		}
+		cred := map[string]any{}
+		if u.CredentialJSON != "" && u.CredentialJSON != "{}" {
+			if err := json.Unmarshal([]byte(u.CredentialJSON), &cred); err != nil {
+				return nil, fmt.Errorf("user %q credential: %w", u.Name, err)
+			}
+		}
+		user := getStringFromMap(cred, "user")
+		pass := getStringFromMap(cred, "pass")
+		if pass == "" {
+			pass = getStringFromMap(cred, "password")
+		}
+		if user == "" || pass == "" {
+			continue
+		}
+		out = append(out, map[string]string{"user": user, "pass": pass})
+	}
+
+	// Fallback: если пользователи не привязаны через user_inbound,
+	// но админ положил их вручную в settings.users[] — берём оттуда.
+	if len(out) == 0 {
+		if raw, ok := settings["users"].([]any); ok {
+			for _, item := range raw {
+				if m, ok := item.(map[string]any); ok {
+					user := getStringFromMap(m, "user")
+					pass := getStringFromMap(m, "pass")
+					if pass == "" {
+						pass = getStringFromMap(m, "password")
+					}
+					if user != "" && pass != "" {
+						out = append(out, map[string]string{"user": user, "pass": pass})
+					}
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// buildHysteriaUsers собирает settings.users[{auth, email}] для
+// Hysteria2 в Xray. Панель пишет clients, а Xray ждёт users
+// с полем "auth". См. #2 нового аудита.
+func buildHysteriaUsers(users []UserInput) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(users))
+	for _, u := range users {
+		if !u.Enabled {
+			continue
+		}
+		cred := map[string]any{}
+		if u.CredentialJSON != "" && u.CredentialJSON != "{}" {
+			if err := json.Unmarshal([]byte(u.CredentialJSON), &cred); err != nil {
+				return nil, fmt.Errorf("user %q credential: %w", u.Name, err)
+			}
+		}
+		auth := getStringFromMap(cred, "auth")
+		if auth == "" {
+			auth = getStringFromMap(cred, "password")
+		}
+		if auth == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"auth":  auth,
+			"email": u.Email,
+		})
+	}
+	return out, nil
+}
+
+// getStringFromMap — утилита, извлекает строку из map[string]any.
+func getStringFromMap(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }
