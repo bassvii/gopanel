@@ -5,6 +5,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -347,6 +348,11 @@ func (s *Server) routes() {
 
 // handleStatic отдаёт файлы фронтенда. Если файл не найден —
 // отдаёт index.html (SPA-роутинг).
+//
+// index.html получает подстановку base_path: placeholder
+// __GOPANEL_BASE__ заменяется на s.secret. Так фронт знает
+// секретный префикс для любого base_path, а не только hex-32.
+// См. #6 нового аудита.
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, s.secret)
 	path = strings.TrimPrefix(path, "/")
@@ -360,7 +366,11 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Content-Type по расширению.
+	// index.html — подставляем base_path.
+	if path == "index.html" {
+		data = s.injectBasePath(data)
+	}
+
 	ctype := mime.TypeByExtension(filepath.Ext(path))
 	if ctype != "" {
 		w.Header().Set("Content-Type", ctype)
@@ -368,15 +378,23 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// serveIndex отдаёт index.html.
+// serveIndex отдаёт index.html с подставленным base_path.
 func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	data, err := fs.ReadFile(s.webFS, "index.html")
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	data = s.injectBasePath(data)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
+}
+
+// injectBasePath заменяет placeholder __GOPANEL_BASE__ в index.html
+// на s.secret. Фронт читает его из <meta name="gopanel-base">.
+func (s *Server) injectBasePath(data []byte) []byte {
+	return bytes.ReplaceAll(data, []byte("__GOPANEL_BASE__"), []byte(s.secret))
 }
 
 // SetSystemCollector устанавливает сборщик метрик системы.

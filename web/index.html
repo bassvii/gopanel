@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="gopanel — self-hosted web panel for managing a proxy/VPN server (Xray-core, sing-box)." />
     <meta name="color-scheme" content="dark" />
+    <!-- Подставляется бэкендом при отдаче index.html.
+         См. handleStatic в internal/api/server.go. -->
+    <meta name="gopanel-base" content="__GOPANEL_BASE__" />
     <title>gopanel</title>
   </head>
   <body>
