@@ -131,11 +131,21 @@ func UpdateUser(conn *sql.DB, u User) error {
 	if u.ID == 0 {
 		return errors.New("id is required")
 	}
+	u.Name = strings.TrimSpace(u.Name)
+	if u.Name == "" {
+		return errors.New("name is required")
+	}
+	// Email: если пусто — генерируем из имени (как в CreateUser).
+	// Иначе UNIQUE по двум пустым email даст конфликт.
+	u.Email = strings.TrimSpace(u.Email)
+	if u.Email == "" {
+		u.Email = u.Name + "@gopanel"
+	}
 	var expires int64
 	if !u.ExpiresAt.IsZero() {
 		expires = u.ExpiresAt.Unix()
 	}
-	_, err := conn.Exec(
+	res, err := conn.Exec(
 		`UPDATE users
 		 SET name = ?, email = ?, enabled = ?, quota_bytes = ?,
 		     expires_at = ?, note = ?
@@ -145,6 +155,13 @@ func UpdateUser(conn *sql.DB, u User) error {
 	)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

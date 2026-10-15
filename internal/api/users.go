@@ -108,6 +108,12 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 			Note:       p.Note,
 		})
 		if err != nil {
+			if isUniqueViolation(err) {
+				writeJSON(w, http.StatusConflict, map[string]string{
+					"error": "имя или email уже заняты",
+				})
+				return
+			}
 			s.log.Error("create user failed", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
@@ -166,9 +172,19 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 		}
 		err := db.UpdateUser(s.db, db.User{
 			ID: id, Name: p.Name, Email: p.Email, Enabled: p.Enabled,
-			QuotaBytes: p.QuotaBytes, ExpiresAt: expires,
+			QuotaBytes: p.QuotaBytes, ExpiresAt: expires, Note: p.Note,
 		})
 		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			if isUniqueViolation(err) {
+				writeJSON(w, http.StatusConflict, map[string]string{
+					"error": "имя или email уже заняты",
+				})
+				return
+			}
 			s.log.Error("update user failed", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
@@ -378,4 +394,16 @@ func validateUserPayload(p userPayload) error {
 		return errors.New("expires_at must be non-negative")
 	}
 	return nil
+}
+
+// isUniqueViolation сообщает, является ли ошибка нарушением
+// UNIQUE-констрейнта SQLite. Используется, чтобы вернуть 409
+// вместо 500 при дубле имени или email.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") ||
+		strings.Contains(msg, "constraint failed: UNIQUE")
 }
