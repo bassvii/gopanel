@@ -4,7 +4,9 @@
 package audit
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -34,26 +36,51 @@ const (
 
 // Labels — русские названия для действий.
 var Labels = map[string]string{
-	"login":               "Вход в панель",
-	"logout":              "Выход из панели",
-	"login_failed":        "Неудачный вход",
-	"totp_enabled":        "Включена 2FA",
-	"totp_disabled":       "Отключена 2FA",
-	"recovery_code_used":  "Использован код восстановления",
-	"password_reset":      "Сброс пароля",
-	"password_change":     "Пароль изменён",
-	"sessions_revoked":    "Завершены все сессии, кроме текущей",
-	"session_revoked":     "Сессия завершена",
-	"user_create":         "Создан пользователь",
-	"user_update":         "Изменён пользователь",
-	"user_delete":         "Удалён пользователь",
-	"user_reset_traffic":  "Сброшен трафик",
-	"user_inbound_attach": "Привязан инбаунд к пользователю",
-	"user_inbound_detach": "Отвязан инбаунд от пользователя",
-	"inbound_create":      "Создан инбаунд",
-	"inbound_update":      "Изменён инбаунд",
-	"inbound_delete":      "Удалён инбаунд",
+	"login":                   "Вход в панель",
+	"logout":                  "Выход из панели",
+	"login_failed":            "Неудачный вход",
+	"totp_enabled":            "Включена 2FA",
+	"totp_disabled":           "Отключена 2FA",
+	"recovery_code_used":      "Использован код восстановления",
+	"password_reset":          "Сброс пароля",
+	"password_change":         "Пароль изменён",
+	"sessions_revoked":        "Завершены все сессии, кроме текущей",
+	"session_revoked":         "Сессия завершена",
+	"user_create":             "Создан пользователь",
+	"user_update":             "Изменён пользователь",
+	"user_delete":             "Удалён пользователь",
+	"user_reset_traffic":      "Сброшен трафик",
+	"user_inbound_attach":     "Привязан инбаунд к пользователю",
+	"user_inbound_detach":     "Отвязан инбаунд от пользователя",
+	"inbound_create":          "Создан инбаунд",
+	"inbound_update":          "Изменён инбаунд",
+	"inbound_delete":          "Удалён инбаунд",
+	"outbound_create":         "Создан outbound",
+	"outbound_update":         "Изменён outbound",
+	"outbound_delete":         "Удалён outbound",
+	"routing_create":          "Создано правило маршрутизации",
+	"routing_update":          "Изменено правило маршрутизации",
+	"routing_delete":          "Удалено правило маршрутизации",
+	"routing_preset_apply":    "Применён пресет маршрутизации",
+	"totp_setup":              "Настроена 2FA (ожидание подтверждения)",
+	"totp_enable_failed":      "Неверный код при включении 2FA",
+	"totp_disable_failed":     "Неверный код при отключении 2FA",
+	"backup_download":         "Скачан бэкап базы",
+	"geo_update":              "Обновлены GeoIP/GeoSite",
+	"tls_cert_create":         "Создан TLS-сертификат",
+	"session_context_changed": "Контекст сессии изменился",
+	"admin_lockout_bypass":    "Обход блокировки по TOTP",
 }
+
+const (
+	// maxTargetLen — максимальная длина поля target. Логины,
+	// теги инбаундов и т.п. не должны быть длиннее.
+	maxTargetLen = 256
+	// maxIPLen — максимальная длина IP.
+	maxIPLen = 64
+	// maxActionLen — максимальная длина action.
+	maxActionLen = 64
+)
 
 // label возвращает русское название действия в нижнем регистре.
 func label(action string) string {
@@ -65,7 +92,15 @@ func label(action string) string {
 
 // Log записывает событие. adminID == 0 означает «без администратора»
 // (например, неудачный вход по несуществующему логину).
+//
+// target и ip обрезаются до maxTargetLen / maxIPLen, чтобы
+// злоумышленник не мог записать мегабайт текста (например,
+// введя длинный пароль в поле логина). См. P2-3.
 func Log(conn *sql.DB, adminID int64, action, target, ip string) error {
+	action = truncate(action, maxActionLen)
+	target = truncate(target, maxTargetLen)
+	ip = truncate(ip, maxIPLen)
+
 	_, err := conn.Exec(
 		`INSERT INTO audit_log (admin_id, action, action_ru, target, ip, ts)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
@@ -75,6 +110,28 @@ func Log(conn *sql.DB, adminID int64, action, target, ip string) error {
 		return fmt.Errorf("write audit log: %w", err)
 	}
 	return nil
+}
+
+// truncate обрезает строку до n байт, сохраняя корректность UTF-8.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	// Обрезаем по границе руны.
+	for n > 0 && (s[n]&0xc0) == 0x80 {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// HashLogin возвращает короткий хеш от логина для audit-лога.
+// Используется в неудачных входах по несуществующему логину:
+// вместо самого логина пишем 8-символьный хеш. Это защищает
+// от утечки пароля, если пользователь случайно ввёл его в поле
+// "логин". См. P2-3.
+func HashLogin(login string) string {
+	sum := sha256.Sum256([]byte(login))
+	return hex.EncodeToString(sum[:4])
 }
 
 // List возвращает последние N записей журнала (по убыванию времени).

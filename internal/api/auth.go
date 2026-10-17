@@ -85,7 +85,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		auth.VerifyPasswordDummy(req.Password)
 		s.recordFailure(r, ip, 0)
-		_ = audit.Log(s.db, 0, audit.ActionLoginFailed, req.Username, ip)
+		// Не пишем сам логин: пользователь мог ввести пароль
+		// в поле "логин" случайно. См. P2-3.
+		_ = audit.Log(s.db, 0, audit.ActionLoginFailed, "user:"+audit.HashLogin(req.Username), ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
 	}
