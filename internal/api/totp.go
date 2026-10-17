@@ -67,8 +67,10 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Уважаем admin lockout: не даём перебирать пароль через эту ручку.
-	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_setup") {
+	// Setup сбрасывает счётчик: TOTP-кода здесь ещё нет (он только
+	// генерируется). Иначе первый шаг настройки 2FA был бы невозможен
+	// после случайной неудачи с паролем.
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_setup", true) {
 		return
 	}
 
@@ -185,7 +187,10 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_enable") {
+	// clearOnSuccess=false: после пароля проверяется TOTP-код.
+	// Счётчик сбросим только после успешной проверки обоих
+	// факторов. См. P1-4.
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_enable", false) {
 		return
 	}
 
@@ -203,11 +208,16 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !auth.VerifyTOTP(pending, req.Code) {
+		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+		_ = audit.Log(s.db, sess.AdminID, "totp_enable_failed", "code", s.clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, totpEnableResponse{
 			Error: "invalid code",
 		})
 		return
 	}
+
+	// Оба фактора прошли — теперь можно сбросить счётчик.
+	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	if err := auth.ActivatePendingTOTP(s.db, sess.AdminID); err != nil {
 		if errors.Is(err, auth.ErrTOTPAlreadyEnabled) {
@@ -282,7 +292,10 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_disable") {
+	// clearOnSuccess=false: после пароля проверяется TOTP-код.
+	// Счётчик сбросим только после успешной проверки обоих
+	// факторов. См. P1-4.
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "totp_disable", false) {
 		return
 	}
 	if !auth.VerifyAndConsumeTOTP(s.db, admin.ID, admin.TOTPSecret, req.Code) {
@@ -291,6 +304,9 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
 		return
 	}
+
+	// Оба фактора прошли — теперь можно сбросить счётчик.
+	_ = auth.ClearAdminFailedAttempts(s.db, admin.ID)
 
 	if err := auth.ClearTOTPSecret(s.db, sess.AdminID); err != nil {
 		s.log.Error("clear totp failed", "err", err)

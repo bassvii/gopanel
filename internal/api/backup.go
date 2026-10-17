@@ -53,7 +53,7 @@ func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "backup_download") {
+	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "backup_download", true) {
 		return
 	}
 

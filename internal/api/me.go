@@ -50,7 +50,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if !s.verifyFreshPassword(w, r, sess, admin, req.OldPassword, "password_change") {
+	if !s.verifyFreshPassword(w, r, sess, admin, req.OldPassword, "password_change", true) {
 		return
 	}
 
