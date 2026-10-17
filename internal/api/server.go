@@ -40,7 +40,6 @@ type Server struct {
 	secret            string
 	addr              string
 	port              int
-	reloadCh          chan struct{}
 	cachedXrayVersion string
 	dbPath            string
 
@@ -126,7 +125,6 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 		log:         log,
 		mux:         http.NewServeMux(),
 		secret:      secret,
-		reloadCh:    make(chan struct{}, 1),
 		trustedNets: trustedNets,
 	}
 	s.routes()
@@ -149,27 +147,6 @@ func (s *Server) Port() int { return s.port }
 // SecretPath возвращает базовый путь.
 func (s *Server) SecretPath() string { return s.secret }
 
-// ReloadCh возвращает канал для чтения сигналов перезагрузки.
-func (s *Server) ReloadCh() <-chan struct{} {
-	return s.reloadCh
-}
-
-// ReloadSignal возвращает канал для отправки сигналов перезагрузки.
-func (s *Server) ReloadSignal() chan<- struct{} {
-	return s.reloadCh
-}
-
-// requestReload отправляет сигнал перегенерировать конфиг Xray.
-// Оставлено для обратной совместимости — некоторые места могут
-// ещё использовать асинхронный путь. Новый код использует
-// applyNow, который возвращает ошибку.
-func (s *Server) requestReload() {
-	select {
-	case s.reloadCh <- struct{}{}:
-	default:
-	}
-}
-
 // SetApplier устанавливает замыкание, которое собирает конфиг Xray
 // из БД и применяет его (с проверкой xray -test). Вызывается из
 // main.go один раз при старте.
@@ -177,14 +154,15 @@ func (s *Server) SetApplier(f func() error) {
 	s.applier = f
 }
 
-// applyNow применяет конфиг синхронно и возвращает ошибку, если
-// конфиг невалиден или Xray не стартовал. Используется в хендлерах,
-// чтобы UI знал, применился ли конфиг, а не показывал «успех»
-// при упавшем xray -test. См. #1 нового аудита.
+// ApplyNow — экспортированная версия applyNow для внешних вызывающих
+// (лимитер, reloadLoop). Возвращает ошибку применения конфига.
+func (s *Server) ApplyNow() error {
+	return s.applyNow()
+}
+
 func (s *Server) applyNow() error {
 	if s.applier == nil {
-		// Applier не установлен — падаем на асинхронный путь.
-		s.requestReload()
+		// Applier не установлен — нечего применять.
 		return nil
 	}
 	s.applyMu.Lock()

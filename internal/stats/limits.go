@@ -53,8 +53,9 @@ RETURNING name`, now)
 }
 
 // RunLimitEnforcer периодически применяет лимиты.
-// Если были отключения — сигналит через reloadCh и создаёт уведомления.
-func RunLimitEnforcer(ctx context.Context, conn *sql.DB, reloadCh chan<- struct{}, interval time.Duration, log *slog.Logger) {
+// Если были отключения — вызывает applyFn (синхронно) и создаёт уведомления.
+// Ошибка применения логируется, но не прерывает цикл.
+func RunLimitEnforcer(ctx context.Context, conn *sql.DB, applyFn func() error, interval time.Duration, log *slog.Logger) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -70,10 +71,10 @@ func RunLimitEnforcer(ctx context.Context, conn *sql.DB, reloadCh chan<- struct{
 			for _, name := range names {
 				notify.QuotaExceeded(conn, log, name)
 			}
-			if len(names) > 0 && reloadCh != nil {
-				select {
-				case reloadCh <- struct{}{}:
-				default:
+			if len(names) > 0 && applyFn != nil {
+				if err := applyFn(); err != nil {
+					log.Error("apply config after limit enforcement failed", "err", err)
+					notify.XrayFailed(conn, log, err.Error())
 				}
 			}
 		}

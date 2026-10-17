@@ -368,11 +368,9 @@ func runServe(args []string) error {
 	// См. P1-1.
 	core.BeforeStop = collector.FlushNow
 
-	// 10. Цикл перезагрузки.
-	go reloadLoop(ctx, srv, core, conn, log)
-
-	// 11. Лимиты.
-	go stats.RunLimitEnforcer(ctx, conn, srv.ReloadSignal(), 30*time.Second, log)
+	// 11. Лимиты. Лимитер теперь вызывает applyNow напрямую
+	// (через коллбэк), а не через канал ReloadCh.
+	go stats.RunLimitEnforcer(ctx, conn, srv.ApplyNow, 30*time.Second, log)
 
 	// 11.5. Retention: чистка traffic и audit_log раз в сутки.
 	go db.RunRetentionLoop(ctx, conn, log)
@@ -405,27 +403,6 @@ func runServe(args []string) error {
 		return srv.Stop(shutdownCtx)
 	case err := <-errCh:
 		return err
-	}
-}
-
-// reloadLoop слушает сигналы перезагрузки и перегенерирует конфиг Xray.
-func reloadLoop(ctx context.Context, srv *api.Server, core *xray.Core, conn *sql.DB, log *slog.Logger) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-srv.ReloadCh():
-			data, err := buildConfigFromDB(conn, log)
-			if err != nil {
-				log.Error("rebuild config failed", "err", err)
-				continue
-			}
-			if err := core.ApplyConfig(ctx, data); err != nil {
-				log.Error("apply config failed", "err", err)
-				continue
-			}
-			log.Info("xray config reloaded")
-		}
 	}
 }
 
