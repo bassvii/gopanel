@@ -445,6 +445,19 @@ docker compose build --no-cache
 docker compose up -d --force-recreate
 ```
 
+### Если панель за обратным прокси (Nginx/Traefik/Caddy)
+
+В Docker все запросы к панели приходят с IP docker-шлюза (`172.x.x.x`),
+а не с реального IP клиента. Из-за этого rate-limit и lockout
+срабатывают на всех сразу.
+
+Решение — передать реальный IP через `X-Forwarded-For` и сказать
+панели доверять прокси:
+
+```yaml
+environment:
+  GOPANEL_TRUSTED_PROXIES: "172.16.0.0/12"```
+
 ### Перед обновлением — бэкап
 
 ```bash

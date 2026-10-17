@@ -52,7 +52,7 @@ gopanel run [flags]
 | `--port N` | `GOPANEL_PORT` | `0` (случайный) | Порт listener |
 | `--base-path PATH` | `GOPANEL_BASE_PATH` | (генерируется) | Секретный префикс URL |
 | `--xray-bin PATH` | `GOPANEL_XRAY_BIN` | `/usr/local/bin/xray` | Путь к бинарнику Xray |
-| `--xray-config PATH` | `GOPANEL_XRAY_CONFIG` | `/tmp/gopanel-xray.json` | Куда писать конфиг Xray |
+| `--xray-config PATH` | `GOPANEL_XRAY_CONFIG` | `/tmp/gopanel-xray.json` | Куда писать конфиг Xray (в systemd-установке — `/run/gopanel/xray.json`) |
 | `--log-level LEVEL` | `GOPANEL_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `--secure-cookies` | `GOPANEL_SECURE_COOKIES=1` | `false` | Secure-флаг на cookie сессии |
 | `--trusted-proxies CIDR` | `GOPANEL_TRUSTED_PROXIES` | — | CIDR через запятую |
