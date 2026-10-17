@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -133,24 +134,51 @@ func (p *Process) Start(ctx context.Context) error {
 		"XRAY_LOCATION_ASSET="+xrayAssetDir(),
 	)
 
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return fmt.Errorf("start xray: %w", err)
-	}
+	// Pdeathsig в Go привязан к потоку ОС, который вызвал Start(),
+	// а не к процессу. Если этот поток завершится (Go-рантайм
+	// переиспользует потоки), Xray получит SIGTERM раньше времени.
+	// Известный баг: golang/go#27505. См. #10 нового аудита.
+	//
+	// Решение: запускаем cmd.Start() из выделенной горутины,
+	// жёстко привязанной к потоку через runtime.LockOSThread().
+	// Горутина живёт столько же, сколько Xray (ждёт Wait()).
+	startErr := make(chan error, 1)
+	done := make(chan struct{})
 
 	p.mu.Lock()
 	p.cmd = cmd
 	p.cancel = cancel
-	p.done = make(chan struct{})
+	p.done = done
 	p.lastErr = nil
 	p.mu.Unlock()
+
+	go func() {
+		runtime.LockOSThread()
+		// Поток не вернётся в пул, пока жива эта горутина.
+		// Горутина живёт, пока жив Xray: Wait() блокируется.
+		defer runtime.UnlockOSThread()
+
+		if err := cmd.Start(); err != nil {
+			startErr <- err
+			return
+		}
+		startErr <- nil
+
+		// Здесь же ждём завершения процесса. Поток остаётся
+		// привязанным до конца — Pdeathsig срабатывает корректно.
+		p.superviseAfterStart(runCtx, cmd, done)
+	}()
+
+	if err := <-startErr; err != nil {
+		cancel()
+		return fmt.Errorf("start xray: %w", err)
+	}
 
 	p.running.Store(true)
 	p.startedAt.Store(time.Now().Unix())
 
 	p.log.Info("xray started", "pid", cmd.Process.Pid, "config", p.configPath)
 
-	go p.supervise(runCtx, cmd)
 	return nil
 }
 
@@ -175,21 +203,27 @@ func (p *Process) Stop() error {
 			_ = p.cmd.Process.Kill()
 		}
 		p.mu.Unlock()
-		<-done
+		// Ждём ещё немного — Kill() должен сработать.
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			p.log.Warn("xray did not exit after SIGKILL")
+		}
 	}
 
 	p.log.Info("xray stopped")
 	return nil
 }
 
-// supervise ждёт завершения процесса. Если он упал сам (не по Stop),
-// пытается перезапустить с backoff.
-func (p *Process) supervise(ctx context.Context, cmd *exec.Cmd) {
+// superviseAfterStart ждёт завершения процесса, вызванного из
+// выделенной горутины с LockOSThread. done — канал из Start(),
+// который закрывается при выходе (чтобы Stop() знал, что процесс
+// завершён).
+func (p *Process) superviseAfterStart(ctx context.Context, cmd *exec.Cmd, done chan struct{}) {
 	err := cmd.Wait()
 
 	p.mu.Lock()
 	p.lastErr = err
-	done := p.done
 	p.cmd = nil
 	p.cancel = nil
 	close(done)
