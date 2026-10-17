@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,12 +48,13 @@ func New(binPath, configPath string, log *slog.Logger) (*Core, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+
 	return &Core{
 		binPath:    binPath,
 		configPath: configPath,
 		log:        log,
 		process:    NewProcess(binPath, configPath, log),
-		stats:      NewStatsClient("127.0.0.1:10085", log),
+		stats:      NewStatsClient(APIAddr, log),
 	}, nil
 }
 
@@ -164,6 +166,10 @@ func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
 	// Всё ок — сохраняем как .good на будущее.
 	c.saveGood(data)
 
+	if err := waitForAPI(APIAddr, 3*time.Second); err != nil {
+		c.log.Warn("stats api unavailable", "err", err)
+	}
+
 	// Xray только что перезапустился — старое gRPC-соединение
 	// (если было) порвано. Переподключаемся.
 	if err := c.stats.Connect(ctx); err != nil {
@@ -219,6 +225,10 @@ func (c *Core) rollback(ctx context.Context, origErr error) error {
 		return fmt.Errorf("%w (rollback: %v)", origErr, err)
 	}
 
+	if err := waitForAPI(APIAddr, 3*time.Second); err != nil {
+		c.log.Warn("stats api unavailable after rollback", "err", err)
+	}
+
 	if err := c.stats.Connect(ctx); err != nil {
 		c.log.Warn("stats grpc connect failed after rollback", "err", err)
 	}
@@ -239,6 +249,20 @@ func (c *Core) waitStarted(timeout time.Duration) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return nil
+}
+
+// waitForAPI ждёт, пока Xray начнёт слушать gRPC-порт API.
+func waitForAPI(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("xray api %s не отвечает за %s", addr, timeout)
 }
 
 // tempConfigPath возвращает путь к временному файлу с расширением .json,

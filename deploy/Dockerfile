@@ -55,10 +55,10 @@ RUN case "${TARGETARCH}" in \
 COPY --from=build /out/gopanel /usr/local/bin/gopanel
 
 # Каталог для БД.
-RUN mkdir -p /var/lib/gopanel && \
+RUN mkdir -p /var/lib/gopanel /run/gopanel && \
     addgroup -S gopanel && \
     adduser -S -G gopanel -h /var/lib/gopanel gopanel && \
-    chown -R gopanel:gopanel /var/lib/gopanel
+    chown -R gopanel:gopanel /var/lib/gopanel /run/gopanel
 
 USER gopanel
 

@@ -6,9 +6,47 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+// APIAddr — адрес gRPC StatsService Xray (loopback TCP).
+//
+// Unix-сокет не используется: Xray 26.3.27 падает с паникой
+// (strconv.Atoi: parsing "") при первом соединении через сокет.
+const APIAddr = "127.0.0.1:10085"
+
+// APISocketPath — устаревшая функция (Unix-сокет не используется).
+// Оставлена, чтобы не ломать возможные внешние вызовы.
+//
+// Deprecated: используйте APIAddr.
+func APISocketPath() string {
+	for _, dir := range []string{"/run/gopanel", filepath.Join(os.TempDir(), "gopanel")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			continue
+		}
+		probe := filepath.Join(dir, ".w")
+		f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			continue
+		}
+		_ = f.Close()
+		_ = os.Remove(probe)
+		return filepath.Join(dir, "xray-api.sock")
+	}
+	return filepath.Join(os.TempDir(), "xray-api.sock")
+}
+
+// RemoveStaleAPISocket — устаревшая функция, удаляет остатки Unix-сокета.
+//
+// Deprecated: Unix-сокет не используется.
+func RemoveStaleAPISocket() {
+	sock := APISocketPath()
+	_ = os.Remove(sock)
+	_ = os.Remove(sock + ".lock")
+}
 
 // Config — минимальная структура Xray-конфига, которую мы собираем.
 // Остальные поля (log, dns, routing, policy, stats, api) добавляются
@@ -28,7 +66,7 @@ type Config struct {
 type Inbound struct {
 	Tag            string         `json:"tag"`
 	Listen         string         `json:"listen,omitempty"`
-	Port           int            `json:"port"`
+	Port           int            `json:"port,omitempty"`
 	Protocol       string         `json:"protocol"`
 	Settings       map[string]any `json:"settings,omitempty"`
 	StreamSettings map[string]any `json:"streamSettings,omitempty"`
@@ -101,9 +139,6 @@ type RoutingRuleInput struct {
 }
 
 // BuildConfig собирает конфиг Xray из входных данных.
-// Админский API (StatsService) добавляется автоматически:
-// без него панель не сможет читать статистику.
-// BuildConfig собирает конфиг Xray из входных данных.
 func BuildConfig(in BuildInput) (*Config, error) {
 	outbounds, err := buildOutbounds(in.Outbounds)
 	if err != nil {
@@ -145,18 +180,11 @@ func BuildConfig(in BuildInput) (*Config, error) {
 
 		switch in.Protocol {
 		case "socks", "http":
-			// SOCKS/HTTP читают settings.accounts[{user, pass}],
-			// а не settings.clients. Ключ "pass", не "password".
-			// См. #2 нового аудита.
 			accts, err := buildSOCKSAccounts(in.Users, settings)
 			if err != nil {
 				return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
 			}
 			if len(accts) == 0 {
-				// Если аккаунтов нет (все отключены по квоте или
-				// удалены), мы не можем запустить SOCKS/HTTP как
-				// открытый прокси. Пропускаем этот инбаунд, чтобы
-				// не ронять конфиг остальных. См. P0-3.
 				cfg.Skipped = append(cfg.Skipped,
 					fmt.Sprintf("inbound %q (%s): нет аккаунтов — пропущен (открытый прокси запрещён)", in.Tag, in.Protocol))
 				continue
@@ -165,13 +193,9 @@ func BuildConfig(in BuildInput) (*Config, error) {
 			if in.Protocol == "socks" {
 				settings["auth"] = "password"
 			}
-			// Убираем "users" из settings, если админ его туда положил
-			// вручную — Xray ждёт "accounts".
 			delete(settings, "users")
 
 		case "hysteria":
-			// Hysteria в Xray читает settings.users[{auth, email}],
-			// а панель пишет clients. См. #2 нового аудита.
 			hyUsers, err := buildHysteriaUsers(in.Users)
 			if err != nil {
 				return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
@@ -201,7 +225,8 @@ func BuildConfig(in BuildInput) (*Config, error) {
 		})
 	}
 
-	// API-инбаунд для StatsService.
+	// API-инбаунд для StatsService: loopback TCP, порт 10085.
+	// Порт зарезервирован (см. validateInbound в internal/api/inbounds.go).
 	cfg.Inbounds = append(cfg.Inbounds, Inbound{
 		Tag:      "api",
 		Listen:   "127.0.0.1",
@@ -219,7 +244,6 @@ func MarshalConfig(cfg *Config) ([]byte, error) {
 }
 
 // buildClients собирает список клиентов для инбаунда.
-// Структура зависит от протокола.
 func buildClients(protocol string, users []UserInput) ([]Client, error) {
 	var clients []Client
 	for _, u := range users {
@@ -292,22 +316,12 @@ func defaultPolicy() map[string]any {
 
 func defaultAPI() map[string]any {
 	return map[string]any{
-		"tag": "api",
-		// HandlerService не включаем: он позволяет добавлять/удалять
-		// пользователей и менять инбаунды через локальный API Xray,
-		// а панель его сейчас не использует. Включать его нужно только
-		// вместе с unix-сокетом с правами 0600 (пункт 3 аудита).
+		"tag":      "api",
 		"services": []string{"StatsService"},
 	}
 }
 
 // buildOutbounds формирует список outbound'ов для Xray.
-// Всегда добавляет freedom и blackhole, если их нет.
-// buildOutbounds формирует список outbound'ов для Xray.
-// Всегда добавляет freedom и blackhole, если их нет.
-// Возвращает ошибку, если у outbound битый JSON — иначе конфиг
-// молча терял бы outbound, а правило маршрутизации ссылалось бы
-// на несуществующий тег.
 func buildOutbounds(list []OutboundInput) ([]map[string]any, error) {
 	hasFreedom := false
 	hasBlackhole := false
@@ -370,8 +384,6 @@ func buildOutbounds(list []OutboundInput) ([]map[string]any, error) {
 }
 
 // buildRouting формирует блок routing.
-// Возвращает ошибку, если правило не содержит ни одного условия
-// (такое правило поймало бы весь трафик) или если JSON в нём битый.
 func buildRouting(rules []RoutingRuleInput) (map[string]any, error) {
 	var out []map[string]any
 
@@ -382,27 +394,7 @@ func buildRouting(rules []RoutingRuleInput) (map[string]any, error) {
 		"outboundTag": "api",
 	})
 
-	// Блокируем приватные адреса и служебные домены до любых
-	// пользовательских правил.
-	//
-	// ВАЖНО: правило с "ip": ["geoip:private"] НЕ сработает для
-	// доменов, если routing использует domainStrategy "AsIs" (это
-	// умолчание Xray). Домен резолвится на стороне Xray уже
-	// ПОСЛЕ матчинга правил, поэтому проверка "geoip:private"
-	// видит IP-литерал только для IP-запросов, а для доменов
-	// совпадения нет.
-	//
-	// Решение: IPOnDemand — Xray резолвит домен ДО матчинга правил.
-	// Тогда "geoip:private" ловит и DNS-ответ 127.0.0.1,
-	// 169.254.169.254, RFC1918. Остаточный риск — DNS rebinding
-	// между резолвом и dial (см. SECURITY.md).
-	//
-	// Служебные имена, которые не должны резолвиться вообще,
-	// перечисляем явно:
-	//   - localhost — loopback по определению;
-	//   - metadata.google.internal, metadata.google.com —
-	//     cloud metadata; у AWS это 169.254.169.254 (IP-литерал),
-	//     и его ловит geoip:private.
+	// Блокируем приватные адреса и служебные домены.
 	out = append(out, map[string]any{
 		"type": "field",
 		"domain": []string{
@@ -474,9 +466,6 @@ func buildRouting(rules []RoutingRuleInput) (map[string]any, error) {
 		out = append(out, rule)
 	}
 
-	// domainStrategy: IPOnDemand — Xray резолвит домен ДО матчинга
-	// правил, чтобы geoip:private ловил и DNS-ответы, а не только
-	// IP-литералы. См. комментарий выше.
 	return map[string]any{
 		"domainStrategy": "IPOnDemand",
 		"rules":          out,
@@ -484,9 +473,6 @@ func buildRouting(rules []RoutingRuleInput) (map[string]any, error) {
 }
 
 // ParseJSONArray разбирает JSON-строку в массив строк.
-// Допускает массив строк и массив чисел (числа превращаются в строки).
-// Всё остальное (объекты, массивы, bool) — ошибка.
-// Экспортирована, чтобы api/routing.go не дублировал логику.
 func ParseJSONArray(s string) ([]string, error) {
 	if s == "" || s == "[]" {
 		return nil, nil
@@ -513,8 +499,6 @@ func ParseJSONArray(s string) ([]string, error) {
 }
 
 // buildSOCKSAccounts собирает settings.accounts для SOCKS/HTTP.
-// Xray читает именно этот ключ, а не "clients". Поля "user" и "pass"
-// (не "password"). См. #2 нового аудита.
 func buildSOCKSAccounts(users []UserInput, settings map[string]any) ([]map[string]string, error) {
 	out := make([]map[string]string, 0, len(users))
 	for _, u := range users {
@@ -538,8 +522,6 @@ func buildSOCKSAccounts(users []UserInput, settings map[string]any) ([]map[strin
 		out = append(out, map[string]string{"user": user, "pass": pass})
 	}
 
-	// Fallback: если пользователи не привязаны через user_inbound,
-	// но админ положил их вручную в settings.users[] — берём оттуда.
 	if len(out) == 0 {
 		if raw, ok := settings["users"].([]any); ok {
 			for _, item := range raw {
@@ -559,9 +541,7 @@ func buildSOCKSAccounts(users []UserInput, settings map[string]any) ([]map[strin
 	return out, nil
 }
 
-// buildHysteriaUsers собирает settings.users[{auth, email}] для
-// Hysteria2 в Xray. Панель пишет clients, а Xray ждёт users
-// с полем "auth". См. #2 нового аудита.
+// buildHysteriaUsers собирает settings.users[{auth, email}] для Hysteria2.
 func buildHysteriaUsers(users []UserInput) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(users))
 	for _, u := range users {

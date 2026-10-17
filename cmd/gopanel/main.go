@@ -356,7 +356,7 @@ func runServe(args []string) error {
 	collector := stats.New(
 		conn,
 		cfg.XrayBin,
-		"127.0.0.1:10085",
+		"unix://"+xray.APISocketPath(),
 		30*time.Second,
 		core,
 		log,
