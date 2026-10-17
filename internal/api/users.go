@@ -4,6 +4,7 @@ package api
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -182,17 +183,23 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 			expires = time.Unix(p.ExpiresAt, 0)
 		}
 		// Если поле не передано, берём текущее значение из БД.
-		var current db.User
-		current, err = db.GetUser(s.db, id)
-		if err != nil {
-			// ... обработка ошибки (404, если не найден)
+		current, err := db.GetUser(s.db, id)
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
 		}
+		if err != nil {
+			s.log.Error("get user failed", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
 		enabled := current.Enabled
 		if p.Enabled != nil {
 			enabled = *p.Enabled
 		}
 
-		err := db.UpdateUser(s.db, db.User{
+		err = db.UpdateUser(s.db, db.User{
 			ID: id, Name: strings.TrimSpace(p.Name), Email: normalizeEmail(p.Name, p.Email),
 			Enabled: enabled, QuotaBytes: p.QuotaBytes, ExpiresAt: expires, Note: p.Note,
 		})
@@ -276,13 +283,18 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 
 	cred := p.CredentialJSON
 	in, err := db.GetInbound(s.db, p.InboundID)
+	if errors.Is(err, db.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "inbound not found"})
+		return
+	}
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inbound not found"})
+		s.log.Error("get inbound failed", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 
 	if cred == "" {
-		cred, err = generateCredential(in.Protocol)
+		cred, err = generateCredential(in.Protocol, in.SettingsJSON)
 		if err != nil {
 			s.log.Error("generate credential failed", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -315,8 +327,7 @@ func (s *Server) handleUserInbounds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// generateCredential создаёт учётные данные для протокола.
-func generateCredential(protocol string) (string, error) {
+func generateCredential(protocol, settingsJSON string) (string, error) {
 	switch protocol {
 	case "vless", "vmess":
 		uuid, err := randomUUID()
@@ -324,12 +335,41 @@ func generateCredential(protocol string) (string, error) {
 			return "", err
 		}
 		return `{"id":"` + uuid + `"}`, nil
-	case "trojan", "shadowsocks":
+	case "trojan":
 		pw, err := randomPassword(16)
 		if err != nil {
 			return "", err
 		}
 		return `{"password":"` + pw + `"}`, nil
+	case "shadowsocks":
+		method := "aes-256-gcm"
+		var m map[string]any
+		if err := json.Unmarshal([]byte(settingsJSON), &m); err == nil {
+			if s, ok := m["method"].(string); ok && s != "" {
+				method = s
+			}
+		}
+		// Для SS-2022 нужен ключ Base64 (32 байта).
+		if strings.HasPrefix(method, "2022-") {
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				return "", err
+			}
+			pw := base64.StdEncoding.EncodeToString(b)
+			return `{"password":"` + pw + `"}`, nil
+		}
+		// Для классических методов — обычный пароль.
+		pw, err := randomPassword(16)
+		if err != nil {
+			return "", err
+		}
+		return `{"password":"` + pw + `"}`, nil
+	case "hysteria", "socks", "http":
+		pw, err := randomPassword(16)
+		if err != nil {
+			return "", err
+		}
+		return `{"auth":"` + pw + `"}`, nil
 	default:
 		return "{}", nil
 	}
