@@ -101,8 +101,8 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		id, err := db.CreateUser(s.db, db.User{
-			Name:       p.Name,
-			Email:      p.Email,
+			Name:       strings.TrimSpace(p.Name),
+			Email:      normalizeEmail(p.Name, p.Email),
 			Enabled:    p.Enabled,
 			QuotaBytes: p.QuotaBytes,
 			ExpiresAt:  expires,
@@ -176,7 +176,8 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 			expires = time.Unix(p.ExpiresAt, 0)
 		}
 		err := db.UpdateUser(s.db, db.User{
-			ID: id, Name: p.Name, Email: p.Email, Enabled: p.Enabled,
+			ID: id, Name: strings.TrimSpace(p.Name),
+			Email: normalizeEmail(p.Name, p.Email), Enabled: p.Enabled,
 			QuotaBytes: p.QuotaBytes, ExpiresAt: expires, Note: p.Note,
 		})
 		if err != nil {
@@ -392,15 +393,29 @@ func validateUserPayload(p userPayload) error {
 	if len(name) > 64 {
 		return errors.New("name must be at most 64 characters")
 	}
+	// Символ ">>>" ломает разбор StatsService в Xray
+	// (user>>>email>>>traffic...), из-за чего трафик юзера
+	// не засчитывается и квота обходится.
+	if strings.Contains(name, ">>>") {
+		return errors.New(`name must not contain ">>>"`)
+	}
+
 	email := strings.TrimSpace(p.Email)
 	if email != "" {
 		if len(email) > 254 {
 			return errors.New("email must be at most 254 characters")
 		}
-		if _, err := mail.ParseAddress(email); err != nil {
+		// Извлекаем чистый адрес (без "Name <addr>").
+		addr, err := mail.ParseAddress(email)
+		if err != nil {
 			return fmt.Errorf("invalid email: %w", err)
 		}
+		email = addr.Address
+		if strings.Contains(email, ">>>") {
+			return errors.New(`email must not contain ">>>"`)
+		}
 	}
+
 	if len(p.Note) > 1024 {
 		return errors.New("note must be at most 1024 characters")
 	}
@@ -411,7 +426,21 @@ func validateUserPayload(p userPayload) error {
 		return errors.New("expires_at must be non-negative")
 	}
 	return nil
-}
+} // <-- Убедись, что эта скобка есть!
+
+// normalizeEmail возвращает чистый email без "Name <addr>".
+// Если email пуст — генерирует из имени (как в db.CreateUser).
+func normalizeEmail(name, email string) string {
+	name = strings.TrimSpace(name)
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return name + "@gopanel"
+	}
+	if addr, err := mail.ParseAddress(email); err == nil {
+		return addr.Address
+	}
+	return email
+} // <-- И эта скобка тоже!
 
 // isUniqueViolation сообщает, является ли ошибка нарушением
 // UNIQUE-констрейнта SQLite. Используется, чтобы вернуть 409

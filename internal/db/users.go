@@ -183,7 +183,8 @@ func ResetUsedBytes(conn *sql.DB, id int64) error {
 		`UPDATE users
 		 SET used_bytes = 0,
 		     enabled = CASE
-		         WHEN expires_at = 0 OR expires_at > strftime('%s','now')
+		         WHEN quota_bytes > 0 AND used_bytes >= quota_bytes
+		              AND (expires_at = 0 OR expires_at > strftime('%s','now'))
 		         THEN 1
 		         ELSE enabled
 		     END
