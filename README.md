@@ -50,6 +50,11 @@ docker run -d \
     -e GOPANEL_ALLOW_NON_LOOPBACK=1 \
     -e GOPANEL_DB_PATH=/var/lib/gopanel/gopanel.db \
     -v gopanel-data:/var/lib/gopanel \
+    --read-only \
+    --tmpfs /tmp \
+    --security-opt no-new-privileges:true \
+    --cap-drop ALL \
+    --cap-add NET_BIND_SERVICE
     gopanel:latest
 ```
 

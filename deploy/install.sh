@@ -430,7 +430,7 @@ ${GREEN}Установка завершена.${NC}
       journalctl -u gopanel -n 50
 
   Проверьте, что unit содержит AmbientCapabilities=CAP_NET_BIND_SERVICE
-  и NoNewPrivileges=false:
+  и NoNewPrivileges=true:
 
       systemctl show gopanel | grep -E 'AmbientCap|NoNewPriv'
 
