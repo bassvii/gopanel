@@ -19,7 +19,11 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/gopanel ./cmd/gopanel
 # --- Стадия 3: финальный образ ---
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 
-RUN apk add --no-cache ca-certificates tzdata unzip curl
+# Базовые пакеты для рантайма.
+RUN apk add --no-cache ca-certificates tzdata
+
+# Временные пакеты для установки Xray. Удаляются после.
+RUN apk add --no-cache --virtual .build-deps curl unzip
 
 # Xray — фиксированная версия с проверкой SHA-256.
 #
@@ -27,16 +31,26 @@ RUN apk add --no-cache ca-certificates tzdata unzip curl
 # править оба места. В перспективе — синхронизировать через
 # build --build-arg (отдельная задача).
 #
-# Архитектура: amd64 (для arm64-образов — отдельная правка с TARGETARCH).
+# Архитектура: TARGETARCH выставляется buildx автоматически
+# (amd64/arm64). Без buildx — amd64 по умолчанию.
+ARG TARGETARCH=amd64
 ARG XRAY_VERSION=v26.3.27
 ARG XRAY_SHA256_AMD64=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae
-RUN curl -fsSL -o /tmp/xray.zip \
-        "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" && \
-    echo "${XRAY_SHA256_AMD64}  /tmp/xray.zip" | sha256sum -c - && \
+ARG XRAY_SHA256_ARM64=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c
+
+RUN case "${TARGETARCH}" in \
+        amd64) XRAY_ARCH="64";    XRAY_SHA="${XRAY_SHA256_AMD64}" ;; \
+        arm64) XRAY_ARCH="arm64-v8a"; XRAY_SHA="${XRAY_SHA256_ARM64}" ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL --proto '=https' --tlsv1.2 -o /tmp/xray.zip \
+        "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip" && \
+    echo "${XRAY_SHA}  /tmp/xray.zip" | sha256sum -c - && \
     unzip -q /tmp/xray.zip -d /tmp/xray && \
     mv /tmp/xray/xray /usr/local/bin/xray && \
     chmod +x /usr/local/bin/xray && \
-    rm -rf /tmp/xray /tmp/xray.zip
+    rm -rf /tmp/xray /tmp/xray.zip && \
+    apk del .build-deps
 
 COPY --from=build /out/gopanel /usr/local/bin/gopanel
 
@@ -55,7 +69,7 @@ USER gopanel
 # base_path читается из файла, который панель пишет при старте
 # (см. P2-13 / P2-7 аудита).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD sh -c 'PORT="${GOPANEL_PORT:-44559}"; BASE=$(cat /var/lib/gopanel/base_path 2>/dev/null || echo ""); wget -qO- "http://127.0.0.1:${PORT}${BASE}/login" >/dev/null 2>&1 || exit 1'
+    CMD wget -qO- "http://127.0.0.1:${GOPANEL_PORT:-44559}/healthz" >/dev/null 2>&1 || exit 1
 
 # Порт по умолчанию (44559) — только для справки.
 # Реальный проброс портов делается через `-p` в docker run / compose.

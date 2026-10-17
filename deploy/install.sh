@@ -96,6 +96,27 @@ install_xray() {
         installed=$("$XRAY_BIN" version 2>/dev/null | head -1 || echo "unknown")
         log "Xray уже установлен: $installed"
         log "ожидаемая версия: ${XRAY_VERSION}"
+
+        # Проверяем версию. Если не совпадает с versions.env —
+        # предлагаем переустановить (или падаем, если --non-interactive).
+        if ! echo "$installed" | grep -q "Xray ${XRAY_VERSION#v}"; then
+            warn "установленная версия Xray не совпадает с ${XRAY_VERSION}"
+            if [[ "${GOPANEL_NON_INTERACTIVE:-0}" == "1" ]]; then
+                die "запустите с обновлённым Xray вручную или удалите $XRAY_BIN"
+            fi
+            read -rp "Переустановить Xray из официального релиза? [y/N]: " ans
+            case "$ans" in
+                [yY]|[yY][eE][sS])
+                    rm -f "$XRAY_BIN"
+                    install_xray
+                    return
+                    ;;
+                *)
+                    warn "оставляем текущий Xray без проверки"
+                    ;;
+            esac
+        fi
+
         # Снимаем возможный старый setcap, если он остался от прошлых версий.
         setcap -r "$XRAY_BIN" 2>/dev/null || true
     else
@@ -117,7 +138,7 @@ install_xray() {
         fi
 
         log "скачиваю $url"
-        curl -fsSL -o "$tmp/xray.zip" "$url"
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/xray.zip" "$url"
 
         # Проверка контрольной суммы ДО распаковки.
         # При несовпадении — ничего не устанавливаем.
@@ -164,7 +185,7 @@ install_xray() {
         local name="$1" url="$2" expected="$3" dst="$4"
         local tmp="${dst}.tmp"
 
-        if ! curl -fsSL -o "$tmp" "$url"; then
+        if ! curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp" "$url"; then
             warn "не удалось скачать ${name} (${url})"
             rm -f "$tmp"
             return 1
@@ -291,24 +312,34 @@ Type=simple
 User=$GOPANEL_USER
 Group=$GOPANEL_USER
 Environment=GOPANEL_GEO_DIR=$GEO_DIR
-ExecStart=$GOPANEL_BIN run --config $GOPANEL_CONFIG --db $GOPANEL_DB
+ExecStart=$GOPANEL_BIN run --config $GOPANEL_CONFIG --db $GOPANEL_DB --xray-config /run/gopanel/xray.json
 Restart=on-failure
 RestartSec=5
 
 # Безопасность.
 #
-# NoNewPrivileges=false нужен, чтобы дочерний процесс Xray унаследовал
-# CAP_NET_BIND_SERVICE через AmbientCapabilities. Иначе Xray не сможет
-# занять порты < 1024 (443 и т.п.). См. пункт 4 аудита.
-# Альтернатива setcap на бинарник Xray тут не работает: NoNewPrivileges=true
-# запрещает дочерним процессам получать новые привилегии через file caps.
-NoNewPrivileges=false
+# NoNewPrivileges=true не мешает наследованию ambient capabilities:
+# они сохраняются при execve, если уже есть в bounding set.
+# Проверено на ядре 4.3+. Если Xray не может занять 443 —
+# временно верни false и посмотри journalctl.
+NoNewPrivileges=true
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
+# Песочница systemd.
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+UMask=0077
+RuntimeDirectory=gopanel
+RuntimeDirectoryMode=0700
 ReadWritePaths=$GOPANEL_DIR
 
 # Логи

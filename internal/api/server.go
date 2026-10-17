@@ -338,6 +338,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET "+s.secret+"/notifications", s.handleNotifications)
 	s.mux.HandleFunc("POST "+s.secret+"/notifications/read", s.handleNotificationsRead)
 
+	// --- Healthcheck ---
+	// Публичный эндпоинт без авторизации для Docker HEALTHCHECK.
+	// Отвечает 200 OK и "ok", не раскрывает версий и путей.
+	// Живёт в корне, вне base_path — чтобы Docker мог проверить
+	// контейнер, не зная секретного префикса.
+	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
 	// --- Статика ---
 	if s.webFS != nil {
 		s.mux.HandleFunc("GET "+s.secret+"/", s.handleStatic)
