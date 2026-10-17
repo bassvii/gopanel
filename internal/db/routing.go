@@ -333,3 +333,17 @@ func UpdateRoutingRuleTx(tx *sql.Tx, r RoutingRule) error {
 	}
 	return nil
 }
+
+// CountRoutingRulesByOutbound возвращает число включённых правил,
+// ссылающихся на указанный outbound_tag.
+func CountRoutingRulesByOutbound(conn *sql.DB, tag string) (int, error) {
+	var n int
+	err := conn.QueryRow(
+		`SELECT COUNT(*) FROM routing_rules WHERE outbound_tag = ? AND enabled = 1`,
+		tag,
+	).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count routing rules by outbound %q: %w", tag, err)
+	}
+	return n, nil
+}

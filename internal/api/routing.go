@@ -166,6 +166,10 @@ func (s *Server) handleRoutingRule(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		if err := s.validateRoutingRuleOutbound(p); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		err := db.UpdateRoutingRule(s.db, db.RoutingRule{
 			ID:              id,
 			RuleTag:         p.RuleTag,
@@ -287,6 +291,19 @@ func validateRoutingRule(p routingRulePayload) error {
 
 	if cond == 0 {
 		return errors.New("правило без единого условия поймало бы весь трафик: задайте domains/ips/ports/network/inbound_tags/protocol")
+	}
+	return nil
+}
+
+// validateRoutingRuleOutbound проверяет, что outbound_tag существует
+// и включён. Вызывается в handleRoutingRules/handleRoutingRule после
+// validateRoutingRule (нужен доступ к БД).
+func (s *Server) validateRoutingRuleOutbound(p routingRulePayload) error {
+	if _, err := db.GetOutboundByTag(s.db, p.OutboundTag); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return fmt.Errorf("outbound %q не существует", p.OutboundTag)
+		}
+		return fmt.Errorf("проверка outbound %q: %w", p.OutboundTag, err)
 	}
 	return nil
 }

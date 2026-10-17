@@ -133,11 +133,41 @@ func UpdateOutbound(conn *sql.DB, o Outbound) error {
 
 	if existing.IsBuiltin {
 		// У builtin меняем только enabled.
+		if !o.Enabled && existing.Enabled {
+			// Отключение builtin — проверяем, не ссылаются ли правила.
+			n, err := CountRoutingRulesByOutbound(conn, existing.Tag)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				return fmt.Errorf("builtin %q используется в %d правилах — сначала удалите или перенаправьте их", existing.Tag, n)
+			}
+		}
 		_, err := conn.Exec(
 			`UPDATE outbounds SET enabled = ? WHERE id = ?`,
 			boolToInt(o.Enabled), o.ID,
 		)
 		return err
+	}
+
+	// Для пользовательских outbound'ов — при отключении тоже проверяем.
+	if !o.Enabled && existing.Enabled && existing.Tag != o.Tag {
+		// Тег меняется + отключается — проверяем старый тег.
+		n, err := CountRoutingRulesByOutbound(conn, existing.Tag)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("outbound %q используется в %d правилах — сначала удалите или перенаправьте их", existing.Tag, n)
+		}
+	} else if !o.Enabled && existing.Enabled {
+		n, err := CountRoutingRulesByOutbound(conn, existing.Tag)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("outbound %q используется в %d правилах — сначала удалите или перенаправьте их", existing.Tag, n)
+		}
 	}
 
 	_, err = conn.Exec(
@@ -152,7 +182,6 @@ func UpdateOutbound(conn *sql.DB, o Outbound) error {
 	return nil
 }
 
-// DeleteOutbound удаляет outbound. Builtin удалять нельзя.
 func DeleteOutbound(conn *sql.DB, id int64) error {
 	o, err := GetOutbound(conn, id)
 	if err != nil {
@@ -161,6 +190,16 @@ func DeleteOutbound(conn *sql.DB, id int64) error {
 	if o.IsBuiltin {
 		return errors.New("cannot delete builtin outbound")
 	}
+
+	// Запрет удаления, если на тег ссылаются правила.
+	n, err := CountRoutingRulesByOutbound(conn, o.Tag)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return fmt.Errorf("outbound используется в %d правилах — сначала удалите или перенаправьте их", n)
+	}
+
 	_, err = conn.Exec(`DELETE FROM outbounds WHERE id = ?`, id)
 	return err
 }
