@@ -97,7 +97,10 @@ func (c *Core) TestConfig(ctx context.Context, configPath string, timeout time.D
 	cmd := exec.CommandContext(ctx, c.binPath, "run", "-test", "-c", configPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("xray -test failed: %w\n%s", err, out)
+		// В out могут быть фрагменты конфига. Пишем полный
+		// вывод в лог, клиенту отдаём усечённый. См. P3.
+		c.log.Error("xray -test failed", "err", err, "output", string(out))
+		return fmt.Errorf("xray -test failed: %w", err)
 	}
 	return nil
 }

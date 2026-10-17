@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -100,9 +101,13 @@ func fileInfo(path, name string) GeoFileInfo {
 	return info
 }
 
+var updateGeoMu sync.Mutex
+
 // UpdateGeo скачивает свежие файлы GeoIP/GeoSite.
 // Возвращает число обновлённых файлов.
 func UpdateGeo(ctx context.Context) (int, error) {
+	updateGeoMu.Lock()
+	defer updateGeoMu.Unlock()
 	dir := GeoDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 0, fmt.Errorf("mkdir %s: %w", dir, err)

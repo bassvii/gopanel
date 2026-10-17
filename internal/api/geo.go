@@ -3,6 +3,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -26,11 +27,6 @@ func (s *Server) handleGeoStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleGeoUpdate — POST /system/geo/update
 func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
-	// Geo-файлы могут качаться до 5 минут. Дефолтный WriteTimeout
-	// сервера (30с) обрывает ответ. Продлеваем только для этой ручки.
-	if rc := http.NewResponseController(w); rc != nil {
-		_ = rc.SetWriteDeadline(time.Now().Add(6 * time.Minute))
-	}
 	sess, ok := s.requireSession(w, r)
 	if !ok {
 		return
@@ -43,6 +39,13 @@ func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Geo-файлы могут качаться до 5 минут. Дефолтный WriteTimeout
+	// сервера (30с) обрывает ответ. Продлеваем только для этой
+	// ручки и только после аутентификации. См. P3.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(6 * time.Minute))
+	}
+
 	updated, err := system.UpdateGeo(r.Context())
 	if err != nil {
 		s.log.Error("geo update failed", "err", err)
@@ -50,7 +53,7 @@ func (s *Server) handleGeoUpdate(w http.ResponseWriter, r *http.Request) {
 		// Понятное сообщение для permission denied.
 		msg := err.Error()
 		if strings.Contains(msg, "permission denied") {
-			msg = "нет прав на запись в /usr/local/share/xray — запустите панель с правами root или выдайте права пользователю gopanel"
+			msg = fmt.Sprintf("нет прав на запись в %s — выдайте права пользователю gopanel", system.GeoDir())
 		}
 
 		writeJSON(w, http.StatusInternalServerError, map[string]any{

@@ -162,6 +162,12 @@ func (p *Process) Start(ctx context.Context) error {
 			startErr <- err
 			return
 		}
+		// Ставим running=true ДО того, как отпустим вызывающую
+		// горутину. Иначе при мгновенном падении superviseAfterStart
+		// выставит false, а потом Start() — true (гонка).
+		p.running.Store(true)
+		p.startedAt.Store(time.Now().Unix())
+
 		startErr <- nil
 
 		// Здесь же ждём завершения процесса. Поток остаётся
@@ -173,9 +179,6 @@ func (p *Process) Start(ctx context.Context) error {
 		cancel()
 		return fmt.Errorf("start xray: %w", err)
 	}
-
-	p.running.Store(true)
-	p.startedAt.Store(time.Now().Unix())
 
 	p.log.Info("xray started", "pid", cmd.Process.Pid, "config", p.configPath)
 
