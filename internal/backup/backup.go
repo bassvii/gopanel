@@ -35,13 +35,24 @@ func Dump(ctx context.Context, conn *sql.DB, outPath string) error {
 
 // DumpToWriter создаёт дамп во временный файл и отдаёт его в w.
 func DumpToWriter(ctx context.Context, conn *sql.DB, w io.Writer) error {
-	tmp, err := os.CreateTemp("", "gopanel-backup-*.db")
+	// Создаём каталог 0700 и файл 0600 сразу, чтобы не было окна,
+	// когда файл с секретами читается другими пользователями.
+	dir, err := os.MkdirTemp("", "gopanel-backup-*")
 	if err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		os.RemoveAll(dir)
+		return err
+	}
+	defer os.RemoveAll(dir)
+
+	tmpPath := filepath.Join(dir, "backup.db")
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
 	tmp.Close()
-	defer os.Remove(tmpPath)
 
 	if err := Dump(ctx, conn, tmpPath); err != nil {
 		return err

@@ -15,14 +15,17 @@ import (
 
 type backupRequest struct {
 	Password string `json:"password"`
+	TOTPCode string `json:"totp_code,omitempty"`
 }
 
 // handleBackupDownload — POST /backup/download
 //
-// Требует пароль администратора в теле запроса. Бэкап содержит
-// хеши паролей, TOTP-секреты (зашифрованные), recovery-коды —
+// Требует пароль администратора в теле запроса, а если 2FA
+// включена — ещё и TOTP-код. Бэкап содержит хеши паролей,
+// TOTP-секреты (зашифрованные), recovery-коды и **открытые**
+// credentials VPN-клиентов (UUID, пароли, приватные ключи REALITY) —
 // украденная сессия не должна давать доступ ко всему этому без
-// знания пароля (см. P0-2 аудита).
+// знания пароля и кода. См. P0-2, P2-1.
 func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -55,6 +58,22 @@ func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
 
 	if !s.verifyFreshPassword(w, r, sess, admin, req.Password, "backup_download", true) {
 		return
+	}
+
+	// Если 2FA включена — требуем код. Бэкап содержит все секреты
+	// панели (UUID, пароли, приватные ключи), поэтому одной
+	// сессии + пароля недостаточно. См. P2-1.
+	if admin.TOTPSecret != "" {
+		if req.TOTPCode == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "totp_code required"})
+			return
+		}
+		if !auth.VerifyAndConsumeTOTP(s.db, admin.ID, admin.TOTPSecret, req.TOTPCode) {
+			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+			_ = audit.Log(s.db, sess.AdminID, "backup_download_failed", "totp", s.clientIP(r))
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid credentials"})
+			return
+		}
 	}
 
 	name := backup.BackupName()
