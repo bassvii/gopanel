@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	statsService "github.com/xtls/xray-core/app/stats/command"
@@ -28,6 +29,7 @@ type Core struct {
 	log        *slog.Logger
 	process    *Process
 	stats      *StatsClient
+	applyMu    sync.Mutex
 }
 
 // New создаёт Core, проверяя наличие бинарника.
@@ -112,9 +114,13 @@ func (c *Core) WriteConfig(data []byte) error {
 }
 
 // ApplyConfig записывает конфиг, проверяет его, и либо запускает,
-// либо перезапускает Xray. Если проверка не прошла — старый конфиг
-// и процесс не трогаются.
+// либо перезапускает Xray. Если проверка не прошла или процесс
+// не стартовал — старый конфиг и процесс остаются нетронутыми
+// (или восстанавливаются из .good). См. P0-2, P1-3.
 func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
+	c.applyMu.Lock()
+	defer c.applyMu.Unlock()
+
 	// 1. Записать во временный файл (с расширением .json, иначе Xray
 	// не определит формат) и проверить.
 	tmp := tempConfigPath(c.configPath)
@@ -138,12 +144,17 @@ func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
 		}
 	}
 	if err := c.process.Start(ctx); err != nil {
-		return err
+		// Процесс не запустился: откатываемся на .good.
+		return c.rollback(ctx, fmt.Errorf("start new config: %w", err))
 	}
 
 	if err := c.waitStarted(1500 * time.Millisecond); err != nil {
-		return err
+		// Процесс упал сразу после старта: откатываемся на .good.
+		return c.rollback(ctx, fmt.Errorf("new config failed: %w", err))
 	}
+
+	// Всё ок — сохраняем как .good на будущее.
+	c.saveGood(data)
 
 	// Xray только что перезапустился — старое gRPC-соединение
 	// (если было) порвано. Переподключаемся.
@@ -153,6 +164,57 @@ func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
 		c.log.Warn("stats grpc connect failed", "err", err)
 	}
 	return nil
+}
+
+// goodConfigPath возвращает путь к файлу последнего рабочего конфига.
+func (c *Core) goodConfigPath() string {
+	return c.configPath + ".good"
+}
+
+// saveGood сохраняет текущий конфиг как последний рабочий.
+func (c *Core) saveGood(data []byte) {
+	if err := os.WriteFile(c.goodConfigPath(), data, 0o600); err != nil {
+		c.log.Warn("save good config failed", "err", err)
+	}
+}
+
+// rollback откатывается на последний рабочий конфиг (если он есть).
+// Если откат не удался — возвращает исходную ошибку. Если удался —
+// возвращает ошибку с пометкой о восстановлении.
+func (c *Core) rollback(ctx context.Context, origErr error) error {
+	good, err := os.ReadFile(c.goodConfigPath())
+	if err != nil {
+		// Нет последнего рабочего конфига — оставляем Xray как есть.
+		return origErr
+	}
+
+	c.log.Warn("apply failed, rolling back to last good config", "err", origErr)
+
+	// Записываем .good обратно в конфиг.
+	tmp := tempConfigPath(c.configPath)
+	if err := os.WriteFile(tmp, good, 0o600); err != nil {
+		return fmt.Errorf("%w (rollback: write good: %v)", origErr, err)
+	}
+	if err := c.TestConfig(ctx, tmp, 10*time.Second); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("%w (rollback: test good: %v)", origErr, err)
+	}
+	if err := os.Rename(tmp, c.configPath); err != nil {
+		return fmt.Errorf("%w (rollback: rename: %v)", origErr, err)
+	}
+
+	// Перезапускаем процесс на старом конфиге.
+	if err := c.process.Start(ctx); err != nil {
+		return fmt.Errorf("%w (rollback: start: %v)", origErr, err)
+	}
+	if err := c.waitStarted(1500 * time.Millisecond); err != nil {
+		return fmt.Errorf("%w (rollback: %v)", origErr, err)
+	}
+
+	if err := c.stats.Connect(ctx); err != nil {
+		c.log.Warn("stats grpc connect failed after rollback", "err", err)
+	}
+	return fmt.Errorf("%w (восстановлен предыдущий рабочий конфиг)", origErr)
 }
 
 // waitStarted ждёт до timeout, проверяя, что процесс жив.
