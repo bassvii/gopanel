@@ -63,6 +63,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		auth.VerifyPasswordDummy(req.Password)
 		_ = auth.RecordFailedAttempt(s.db, ip)
+		_ = audit.Log(s.db, 0, audit.ActionLoginFailed, req.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
 	}
@@ -116,6 +117,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		_ = auth.RecordFailedAttempt(s.db, ip)            // IP-счётчик
 		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID) // + admin-счётчик
 		notify.LoginFailed(s.db, s.log, admin.Username, ip)
+		_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, admin.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
 	}
@@ -146,6 +148,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			_ = auth.RecordFailedAttempt(s.db, ip)
 			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
 			notify.LoginFailed(s.db, s.log, admin.Username, ip)
+			_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, admin.Username+":totp", ip)
 			writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid code"})
 			return
 		}

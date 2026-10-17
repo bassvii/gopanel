@@ -264,3 +264,72 @@ func defaultJSONArray(s string) string {
 	}
 	return s
 }
+
+// CreateRoutingRuleTx — вариант CreateRoutingRule для работы внутри
+// уже открытой транзакции. Позиция = max + 1 в этой же транзакции.
+func CreateRoutingRuleTx(tx *sql.Tx, r RoutingRule) error {
+	if r.OutboundTag == "" {
+		return errors.New("outbound_tag is required")
+	}
+	r.DomainsJSON = defaultJSONArray(r.DomainsJSON)
+	r.IPsJSON = defaultJSONArray(r.IPsJSON)
+	r.PortsJSON = defaultJSONArray(r.PortsJSON)
+	r.SourceIPsJSON = defaultJSONArray(r.SourceIPsJSON)
+	r.InboundTagsJSON = defaultJSONArray(r.InboundTagsJSON)
+	r.ProtocolJSON = defaultJSONArray(r.ProtocolJSON)
+
+	var maxPos sql.NullInt64
+	if err := tx.QueryRow(`SELECT MAX(position) FROM routing_rules`).Scan(&maxPos); err != nil {
+		return err
+	}
+	pos := 1
+	if maxPos.Valid {
+		pos = int(maxPos.Int64) + 1
+	}
+
+	_, err := tx.Exec(
+		`INSERT INTO routing_rules
+		 (position, rule_tag, domains_json, ips_json, ports_json, source_ips_json,
+		  network, inbound_tags_json, protocol_json, outbound_tag, enabled, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		pos, r.RuleTag, r.DomainsJSON, r.IPsJSON, r.PortsJSON, r.SourceIPsJSON,
+		r.Network, r.InboundTagsJSON, r.ProtocolJSON, r.OutboundTag,
+		boolToInt(r.Enabled), time.Now().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert routing rule: %w", err)
+	}
+	return nil
+}
+
+// UpdateRoutingRuleTx — вариант UpdateRoutingRule для транзакции.
+func UpdateRoutingRuleTx(tx *sql.Tx, r RoutingRule) error {
+	if r.ID == 0 {
+		return errors.New("id is required")
+	}
+	if r.OutboundTag == "" {
+		return errors.New("outbound_tag is required")
+	}
+
+	r.DomainsJSON = defaultJSONArray(r.DomainsJSON)
+	r.IPsJSON = defaultJSONArray(r.IPsJSON)
+	r.PortsJSON = defaultJSONArray(r.PortsJSON)
+	r.SourceIPsJSON = defaultJSONArray(r.SourceIPsJSON)
+	r.InboundTagsJSON = defaultJSONArray(r.InboundTagsJSON)
+	r.ProtocolJSON = defaultJSONArray(r.ProtocolJSON)
+
+	_, err := tx.Exec(
+		`UPDATE routing_rules
+		 SET rule_tag = ?, domains_json = ?, ips_json = ?, ports_json = ?,
+		     source_ips_json = ?, network = ?, inbound_tags_json = ?,
+		     protocol_json = ?, outbound_tag = ?, enabled = ?
+		 WHERE id = ?`,
+		r.RuleTag, r.DomainsJSON, r.IPsJSON, r.PortsJSON, r.SourceIPsJSON,
+		r.Network, r.InboundTagsJSON, r.ProtocolJSON, r.OutboundTag,
+		boolToInt(r.Enabled), r.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update routing rule: %w", err)
+	}
+	return nil
+}

@@ -165,12 +165,59 @@ func (s *Server) handleRoutingPresetApply(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	created, updated, err := s.applyPresetRules(p)
+	if err != nil {
+		s.log.Error("apply preset failed", "err", err, "preset", name)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	_ = audit.Log(s.db, sess.AdminID, "routing_preset_apply", name, s.clientIP(r))
+	resp := map[string]any{
+		"ok":      true,
+		"created": created,
+		"updated": updated,
+		"preset":  name,
+		"applied": true,
+	}
+	if err := s.applyNow(); err != nil {
+		resp["applied"] = false
+		resp["apply_error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// applyPresetRules применяет правила пресета идемпотентно:
+// если правило с таким RuleTag уже есть — обновляет его,
+// иначе создаёт. Возвращает (created, updated, err).
+//
+// Всё в одной транзакции: если упадёт хоть одно правило,
+// БД останется в исходном состоянии. См. #4 нового аудита.
+func (s *Server) applyPresetRules(p preset) (int, int, error) {
+	existing, err := db.ListRoutingRules(s.db)
+	if err != nil {
+		return 0, 0, err
+	}
+	byTag := make(map[string]db.RoutingRule, len(existing))
+	for _, r := range existing {
+		if r.RuleTag != "" {
+			byTag[r.RuleTag] = r
+		}
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
 	created := 0
+	updated := 0
 	for _, rule := range p.Rules {
 		domainsJSON, _ := json.Marshal(rule.Domains)
 		ipsJSON, _ := json.Marshal(rule.IPs)
 
-		_, err := db.CreateRoutingRule(s.db, db.RoutingRule{
+		row := db.RoutingRule{
 			RuleTag:         rule.RuleTag,
 			DomainsJSON:     string(domainsJSON),
 			IPsJSON:         string(ipsJSON),
@@ -181,25 +228,21 @@ func (s *Server) handleRoutingPresetApply(w http.ResponseWriter, r *http.Request
 			ProtocolJSON:    "[]",
 			OutboundTag:     rule.OutboundTag,
 			Enabled:         true,
-		})
-		if err != nil {
-			s.log.Error("apply preset rule failed", "err", err, "rule", rule.RuleTag)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
-			return
 		}
-		created++
+
+		if prev, ok := byTag[rule.RuleTag]; ok {
+			row.ID = prev.ID
+			if err := db.UpdateRoutingRuleTx(tx, row); err != nil {
+				return 0, 0, err
+			}
+			updated++
+		} else {
+			if err := db.CreateRoutingRuleTx(tx, row); err != nil {
+				return 0, 0, err
+			}
+			created++
+		}
 	}
 
-	_ = audit.Log(s.db, sess.AdminID, "routing_preset_apply", name, s.clientIP(r))
-	resp := map[string]any{
-		"ok":      true,
-		"created": created,
-		"preset":  name,
-		"applied": true,
-	}
-	if err := s.applyNow(); err != nil {
-		resp["applied"] = false
-		resp["apply_error"] = err.Error()
-	}
-	writeJSON(w, http.StatusOK, resp)
+	return created, updated, tx.Commit()
 }
