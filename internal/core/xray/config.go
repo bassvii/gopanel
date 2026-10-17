@@ -21,6 +21,7 @@ type Config struct {
 	Inbounds  []Inbound        `json:"inbounds"`
 	Outbounds []map[string]any `json:"outbounds"`
 	Routing   map[string]any   `json:"routing,omitempty"`
+	Skipped   []string         `json:"-"`
 }
 
 // Inbound — инбаунд в формате Xray.
@@ -152,8 +153,13 @@ func BuildConfig(in BuildInput) (*Config, error) {
 				return nil, fmt.Errorf("inbound %q: %w", in.Tag, err)
 			}
 			if len(accts) == 0 {
-				return nil, fmt.Errorf("inbound %q (%s): нет аккаунтов — открытый прокси",
-					in.Tag, in.Protocol)
+				// Если аккаунтов нет (все отключены по квоте или
+				// удалены), мы не можем запустить SOCKS/HTTP как
+				// открытый прокси. Пропускаем этот инбаунд, чтобы
+				// не ронять конфиг остальных. См. P0-3.
+				cfg.Skipped = append(cfg.Skipped,
+					fmt.Sprintf("inbound %q (%s): нет аккаунтов — пропущен (открытый прокси запрещён)", in.Tag, in.Protocol))
+				continue
 			}
 			settings["accounts"] = accts
 			if in.Protocol == "socks" {

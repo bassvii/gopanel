@@ -651,6 +651,11 @@ func buildConfigFromDB(conn *sql.DB, log *slog.Logger) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	for _, skipMsg := range cfg.Skipped {
+		log.Warn("inbound skipped", "reason", skipMsg)
+	}
+
 	return xray.MarshalConfig(cfg)
 }
 
