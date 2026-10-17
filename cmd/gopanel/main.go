@@ -363,6 +363,11 @@ func runServe(args []string) error {
 	)
 	go collector.Run(ctx)
 
+	// 9.5. Перед остановкой Xray (при reload) опрашиваем счётчики
+	// вне очереди, чтобы не потерять трафик за последние 30 секунд.
+	// См. P1-1.
+	core.BeforeStop = collector.FlushNow
+
 	// 10. Цикл перезагрузки.
 	go reloadLoop(ctx, srv, core, conn, log)
 

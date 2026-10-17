@@ -30,6 +30,7 @@ type Core struct {
 	process    *Process
 	stats      *StatsClient
 	applyMu    sync.Mutex
+	BeforeStop func(ctx context.Context)
 }
 
 // New создаёт Core, проверяя наличие бинарника.
@@ -137,8 +138,12 @@ func (c *Core) ApplyConfig(ctx context.Context, data []byte) error {
 		return fmt.Errorf("replace config: %w", err)
 	}
 
-	// 3. Если процесс запущен — перезапустить, иначе запустить.
+	// 3. Если процесс запущен — сначала слить статистику, потом
+	// остановить, иначе потеряем трафик за последние 30 секунд.
 	if c.process.IsRunning() {
+		if c.BeforeStop != nil {
+			c.BeforeStop(ctx)
+		}
 		if err := c.process.Stop(); err != nil && !errors.Is(err, ErrNotRunning) {
 			return fmt.Errorf("stop for reload: %w", err)
 		}

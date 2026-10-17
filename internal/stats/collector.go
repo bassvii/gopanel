@@ -214,3 +214,10 @@ func (c *Collector) Stats() map[string]trafficSample {
 	}
 	return out
 }
+
+// FlushNow делает внеочередной опрос статистики. Вызывается
+// перед остановкой Xray (см. P1-1), чтобы не потерять трафик
+// за последние секунды.
+func (c *Collector) FlushNow(ctx context.Context) {
+	c.pollOnce(ctx)
+}
