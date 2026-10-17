@@ -4,7 +4,10 @@ package xray
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // Config — минимальная структура Xray-конфига, которую мы собираем.
@@ -106,13 +109,18 @@ func BuildConfig(in BuildInput) (*Config, error) {
 		return nil, fmt.Errorf("outbounds: %w", err)
 	}
 
+	routing, err := buildRouting(in.Rules)
+	if err != nil {
+		return nil, fmt.Errorf("routing: %w", err)
+	}
+
 	cfg := &Config{
 		Log:       map[string]any{"loglevel": "warning"},
 		Stats:     map[string]any{},
 		Policy:    defaultPolicy(),
 		API:       defaultAPI(),
 		Outbounds: outbounds,
-		Routing:   buildRouting(in.Rules),
+		Routing:   routing,
 	}
 
 	// Инбаунды.
@@ -356,7 +364,9 @@ func buildOutbounds(list []OutboundInput) ([]map[string]any, error) {
 }
 
 // buildRouting формирует блок routing.
-func buildRouting(rules []RoutingRuleInput) map[string]any {
+// Возвращает ошибку, если правило не содержит ни одного условия
+// (такое правило поймало бы весь трафик) или если JSON в нём битый.
+func buildRouting(rules []RoutingRuleInput) (map[string]any, error) {
 	var out []map[string]any
 
 	// Правило для API — всегда первое.
@@ -414,38 +424,46 @@ func buildRouting(rules []RoutingRuleInput) map[string]any {
 			"type":        "field",
 			"outboundTag": r.OutboundTag,
 		}
-
 		if r.RuleTag != "" {
 			rule["ruleTag"] = r.RuleTag
 		}
 
-		// Домены.
-		if domains, err := parseJSONArray(r.DomainsJSON); err == nil && len(domains) > 0 {
-			rule["domain"] = domains
+		cond := 0
+		add := func(key, js string) error {
+			arr, err := ParseJSONArray(js)
+			if err != nil {
+				return fmt.Errorf("rule %q, поле %s: %w", r.RuleTag, key, err)
+			}
+			if len(arr) > 0 {
+				rule[key] = arr
+				cond++
+			}
+			return nil
 		}
-		// IP.
-		if ips, err := parseJSONArray(r.IPsJSON); err == nil && len(ips) > 0 {
-			rule["ip"] = ips
+		if err := add("domain", r.DomainsJSON); err != nil {
+			return nil, err
 		}
-		// Порты.
-		if ports, err := parseJSONArray(r.PortsJSON); err == nil && len(ports) > 0 {
-			rule["port"] = ports
+		if err := add("ip", r.IPsJSON); err != nil {
+			return nil, err
 		}
-		// Source IP.
-		if src, err := parseJSONArray(r.SourceIPsJSON); err == nil && len(src) > 0 {
-			rule["source"] = src
+		if err := add("port", r.PortsJSON); err != nil {
+			return nil, err
 		}
-		// Network.
+		if err := add("source", r.SourceIPsJSON); err != nil {
+			return nil, err
+		}
+		if err := add("inboundTag", r.InboundTagsJSON); err != nil {
+			return nil, err
+		}
+		if err := add("protocol", r.ProtocolJSON); err != nil {
+			return nil, err
+		}
 		if r.Network != "" {
 			rule["network"] = r.Network
+			cond++
 		}
-		// Inbound tags.
-		if inbounds, err := parseJSONArray(r.InboundTagsJSON); err == nil && len(inbounds) > 0 {
-			rule["inboundTag"] = inbounds
-		}
-		// Protocol.
-		if proto, err := parseJSONArray(r.ProtocolJSON); err == nil && len(proto) > 0 {
-			rule["protocol"] = proto
+		if cond == 0 {
+			return nil, fmt.Errorf("rule %q: нет ни одного условия (правило поймало бы весь трафик)", r.RuleTag)
 		}
 		out = append(out, rule)
 	}
@@ -456,17 +474,34 @@ func buildRouting(rules []RoutingRuleInput) map[string]any {
 	return map[string]any{
 		"domainStrategy": "IPOnDemand",
 		"rules":          out,
-	}
+	}, nil
 }
 
-// parseJSONArray разбирает JSON-строку в массив строк.
-func parseJSONArray(s string) ([]string, error) {
+// ParseJSONArray разбирает JSON-строку в массив строк.
+// Допускает массив строк и массив чисел (числа превращаются в строки).
+// Всё остальное (объекты, массивы, bool) — ошибка.
+// Экспортирована, чтобы api/routing.go не дублировал логику.
+func ParseJSONArray(s string) ([]string, error) {
 	if s == "" || s == "[]" {
 		return nil, nil
 	}
-	var out []string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil, err
+	var raw []any
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("ожидается JSON-массив: %w", err)
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		switch x := v.(type) {
+		case string:
+			if strings.TrimSpace(x) == "" {
+				return nil, errors.New("пустая строка в массиве")
+			}
+			out = append(out, x)
+		case float64:
+			out = append(out, strconv.FormatFloat(x, 'f', -1, 64))
+		default:
+			return nil, fmt.Errorf("недопустимый элемент %v (нужна строка или число)", v)
+		}
 	}
 	return out, nil
 }

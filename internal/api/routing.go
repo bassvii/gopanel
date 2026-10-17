@@ -5,11 +5,13 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/bassvii/gopanel/internal/audit"
+	"github.com/bassvii/gopanel/internal/core/xray"
 	"github.com/bassvii/gopanel/internal/db"
 )
 
@@ -254,10 +256,37 @@ func validateRoutingRule(p routingRulePayload) error {
 	if strings.TrimSpace(p.OutboundTag) == "" {
 		return errors.New("outbound_tag is required")
 	}
-	for _, s := range []string{p.DomainsJSON, p.IPsJSON, p.PortsJSON, p.SourceIPsJSON, p.InboundTagsJSON, p.ProtocolJSON} {
-		if err := db.ValidateJSON(s); err != nil {
-			return err
+
+	cond := 0
+	fields := map[string]string{
+		"domains_json":      p.DomainsJSON,
+		"ips_json":          p.IPsJSON,
+		"ports_json":        p.PortsJSON,
+		"source_ips_json":   p.SourceIPsJSON,
+		"inbound_tags_json": p.InboundTagsJSON,
+		"protocol_json":     p.ProtocolJSON,
+	}
+	for name, val := range fields {
+		arr, err := xray.ParseJSONArray(val)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
 		}
+		if len(arr) > 0 {
+			cond++
+		}
+	}
+
+	switch p.Network {
+	case "", "tcp", "udp", "tcp,udp":
+		if p.Network != "" {
+			cond++
+		}
+	default:
+		return fmt.Errorf("network: недопустимое значение %q (ожидается tcp, udp или tcp,udp)", p.Network)
+	}
+
+	if cond == 0 {
+		return errors.New("правило без единого условия поймало бы весь трафик: задайте domains/ips/ports/network/inbound_tags/protocol")
 	}
 	return nil
 }
