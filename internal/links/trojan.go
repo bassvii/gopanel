@@ -69,6 +69,29 @@ func generateTrojan(in Input) (string, error) {
 				q.Set("host", host)
 			}
 		}
+	case "xhttp":
+		xhttp, _ := stream["xhttpSettings"].(map[string]any)
+		if xhttp != nil {
+			if path := getString(xhttp, "path"); path != "" {
+				q.Set("path", path)
+			}
+			if host := getString(xhttp, "host"); host != "" {
+				q.Set("host", host)
+			}
+			if mode := getString(xhttp, "mode"); mode != "" {
+				q.Set("mode", mode)
+			}
+		}
+	case "httpupgrade":
+		hu, _ := stream["httpupgradeSettings"].(map[string]any)
+		if hu != nil {
+			if path := getString(hu, "path"); path != "" {
+				q.Set("path", path)
+			}
+			if host := getString(hu, "host"); host != "" {
+				q.Set("host", host)
+			}
+		}
 	case "grpc":
 		grpc, _ := stream["grpcSettings"].(map[string]any)
 		if grpc != nil {

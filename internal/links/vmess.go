@@ -67,6 +67,18 @@ func generateVMess(in Input) (string, error) {
 		if grpc != nil {
 			cfg.Path = getString(grpc, "serviceName")
 		}
+	case "xhttp":
+		xhttp, _ := stream["xhttpSettings"].(map[string]any)
+		if xhttp != nil {
+			cfg.Path = getString(xhttp, "path")
+			cfg.Host = getString(xhttp, "host")
+		}
+	case "httpupgrade":
+		hu, _ := stream["httpupgradeSettings"].(map[string]any)
+		if hu != nil {
+			cfg.Path = getString(hu, "path")
+			cfg.Host = getString(hu, "host")
+		}
 	case "tcp":
 		tcp, _ := stream["tcpSettings"].(map[string]any)
 		if tcp != nil {

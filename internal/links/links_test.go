@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -294,6 +295,91 @@ func TestGenerateVLESSRealityArrays(t *testing.T) {
 	for _, want := range []string{"sni=reality.example.com", "sid=abcd1234", "spx=%2Fpath", "pbk=PBK123"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("got %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestGenerateVLESSXHTTP(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol:       "vless",
+		Address:        "example.com",
+		Port:           443,
+		CredentialJSON: `{"id":"11111111-1111-1111-1111-111111111111"}`,
+		StreamJSON:     `{"network":"xhttp","xhttpSettings":{"path":"/x","host":"example.com","mode":"auto"}}`,
+		Remark:         "xhttp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"type=xhttp", "path=%2Fx", "host=example.com", "mode=auto"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestGenerateVLESSHTTPUpgrade(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol:       "vless",
+		Address:        "example.com",
+		Port:           443,
+		CredentialJSON: `{"id":"11111111-1111-1111-1111-111111111111"}`,
+		StreamJSON:     `{"network":"httpupgrade","httpupgradeSettings":{"path":"/up","host":"example.com"}}`,
+		Remark:         "hu",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"type=httpupgrade", "path=%2Fup", "host=example.com"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestGenerateTrojanXHTTP(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol:       "trojan",
+		Address:        "example.com",
+		Port:           443,
+		CredentialJSON: `{"password":"secret123"}`,
+		StreamJSON:     `{"network":"xhttp","xhttpSettings":{"path":"/x","host":"example.com","mode":"stream-up"}}`,
+		Remark:         "xhttp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"type=xhttp", "path=%2Fx", "host=example.com", "mode=stream-up"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestGenerateVMessXHTTP(t *testing.T) {
+	got, err := Generate(Input{
+		Protocol:       "vmess",
+		Address:        "example.com",
+		Port:           443,
+		CredentialJSON: `{"id":"11111111-1111-1111-1111-111111111111"}`,
+		StreamJSON:     `{"network":"xhttp","xhttpSettings":{"path":"/x","host":"example.com"}}`,
+		Remark:         "xhttp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// vmess — base64 от JSON, поэтому проверяем через декодирование.
+	const prefix = "vmess://"
+	if !strings.HasPrefix(got, prefix) {
+		t.Fatalf("got %q, want vmess:// prefix", got)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(got, prefix))
+	if err != nil {
+		t.Fatalf("decode vmess base64: %v", err)
+	}
+	for _, want := range []string{`"net":"xhttp"`, `"path":"/x"`, `"host":"example.com"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("decoded vmess %q, missing %q", string(raw), want)
 		}
 	}
 }
