@@ -83,6 +83,15 @@ func Load(path string, args []string) (Config, error) {
 		return cfg, fmt.Errorf("flags: %w", err)
 	}
 
+	// Валидация и нормализация base_path.
+	if cfg.BasePath != "" {
+		p, err := ValidateBasePath(cfg.BasePath)
+		if err != nil {
+			return cfg, fmt.Errorf("base_path: %w", err)
+		}
+		cfg.BasePath = p
+	}
+
 	return cfg, nil
 }
 
@@ -201,4 +210,36 @@ func applyFlags(cfg *Config, args []string) error {
 		return errors.New("port must be 0..65535")
 	}
 	return nil
+}
+
+// ValidateBasePath проверяет, что base_path безопасен для использования
+// в URL и в HTML-шаблоне.
+//
+// Правила:
+//   - начинается с "/" (или добавляется автоматически);
+//   - только [A-Za-z0-9._~-];
+//   - длина от 2 до 128 символов.
+//
+// Это защищает от паники в http.ServeMux (символы {, }),
+// от XSS в index.html и от опечаток вроде пробела в конце.
+func ValidateBasePath(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if len(p) < 2 {
+		return "", errors.New("base_path is too short")
+	}
+	if len(p) > 128 {
+		return "", errors.New("base_path is too long (max 128)")
+	}
+	for _, r := range p[1:] {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '.' || r == '_' || r == '~' || r == '-') {
+			return "", fmt.Errorf("base_path contains invalid character %q (allowed: a-z, A-Z, 0-9, . _ ~ -)", r)
+		}
+	}
+	return p, nil
 }

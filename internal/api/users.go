@@ -56,7 +56,7 @@ func toUserDTO(u db.User) userDTO {
 type userPayload struct {
 	Name       string `json:"name"`
 	Email      string `json:"email"`
-	Enabled    bool   `json:"enabled"`
+	Enabled    *bool  `json:"enabled"` // nil = не передан, оставить как есть (для PUT)
 	QuotaBytes int64  `json:"quota_bytes"`
 	ExpiresAt  int64  `json:"expires_at"` // unix, 0 = бессрочно
 	Note       string `json:"note"`
@@ -100,10 +100,16 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 			expires = time.Unix(p.ExpiresAt, 0)
 		}
 
+		var enabled bool
+		if p.Enabled != nil {
+			enabled = *p.Enabled
+		} else {
+			enabled = true // при создании по умолчанию включён
+		}
 		id, err := db.CreateUser(s.db, db.User{
 			Name:       strings.TrimSpace(p.Name),
 			Email:      normalizeEmail(p.Name, p.Email),
-			Enabled:    p.Enabled,
+			Enabled:    enabled,
 			QuotaBytes: p.QuotaBytes,
 			ExpiresAt:  expires,
 			Note:       p.Note,
@@ -175,10 +181,20 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 		if p.ExpiresAt > 0 {
 			expires = time.Unix(p.ExpiresAt, 0)
 		}
+		// Если поле не передано, берём текущее значение из БД.
+		var current db.User
+		current, err = db.GetUser(s.db, id)
+		if err != nil {
+			// ... обработка ошибки (404, если не найден)
+		}
+		enabled := current.Enabled
+		if p.Enabled != nil {
+			enabled = *p.Enabled
+		}
+
 		err := db.UpdateUser(s.db, db.User{
-			ID: id, Name: strings.TrimSpace(p.Name),
-			Email: normalizeEmail(p.Name, p.Email), Enabled: p.Enabled,
-			QuotaBytes: p.QuotaBytes, ExpiresAt: expires, Note: p.Note,
+			ID: id, Name: strings.TrimSpace(p.Name), Email: normalizeEmail(p.Name, p.Email),
+			Enabled: enabled, QuotaBytes: p.QuotaBytes, ExpiresAt: expires, Note: p.Note,
 		})
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {

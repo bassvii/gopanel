@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bassvii/gopanel/internal/config"
 	"github.com/bassvii/gopanel/internal/core/xray"
 	"github.com/bassvii/gopanel/internal/notify"
 	"github.com/bassvii/gopanel/internal/system"
@@ -85,13 +86,14 @@ func New(cfg Config, conn *sql.DB, log *slog.Logger) (*Server, error) {
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		return nil, fmt.Errorf("port must be 0..65535, got %d", cfg.Port)
 	}
-	if cfg.BasePath == "" {
-		return nil, errors.New("base path is required")
+	// Валидация base_path на случай, если api.New вызывают не из main.go
+	// (например, в тестах). Основная валидация — в config.Load.
+	secret, err := config.ValidateBasePath(cfg.BasePath)
+	if err != nil {
+		return nil, fmt.Errorf("base path: %w", err)
 	}
-
-	secret := cfg.BasePath
-	if secret[0] != '/' {
-		secret = "/" + secret
+	if secret == "" {
+		return nil, errors.New("base path is required")
 	}
 
 	// Парсим доверенные прокси.
