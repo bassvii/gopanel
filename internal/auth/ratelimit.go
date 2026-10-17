@@ -5,6 +5,7 @@ package auth
 import (
 	"database/sql"
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -191,4 +192,25 @@ func RecordAdminFailedAttempt(conn *sql.DB, adminID int64) error {
 func ClearAdminFailedAttempts(conn *sql.DB, adminID int64) error {
 	_, err := conn.Exec(`DELETE FROM admin_lockouts WHERE admin_id = ?`, adminID)
 	return err
+}
+
+// IsPrivateOrLoopback сообщает, является ли IP loopback или
+// из частных диапазонов (RFC1918, link-local, IPv6 ULA).
+// Для таких адресов жёсткий lockout отключается: за SSH-туннелем
+// или docker-bridge все запросы выглядят как один IP, и 5 неудач
+// блокируют вход всем, включая владельца (P1-5).
+func IsPrivateOrLoopback(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	// IPv6 ULA (fc00::/7) — IsPrivate в Go 1.17+ уже покрывает,
+	// но на всякий случай.
+	if ip.To4() == nil && len(ip) == net.IPv6len && (ip[0]&0xfe) == 0xfc {
+		return true
+	}
+	return false
 }

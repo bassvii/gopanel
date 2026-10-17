@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bassvii/gopanel/internal/audit"
 	"github.com/bassvii/gopanel/internal/auth"
@@ -41,6 +42,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	ip := s.clientIP(r)
 
+	// Для loopback/приватных IP (SSH-туннель, docker-bridge) не
+	// применяем жёсткий lockout: все запросы приходят с одного
+	// адреса, и атакующий мог бы заблокировать вход владельцу.
+	// Вместо этого — задержка (P1-5).
+	softLockout := auth.IsPrivateOrLoopback(ip) && len(s.trustedNets) == 0
+
 	locked, wait, err := auth.IsLockedOut(s.db, ip)
 	if err != nil {
 		s.log.Error("lockout check failed", "err", err)
@@ -48,9 +55,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if locked {
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
-		writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
-		return
+		if softLockout {
+			// Не блокируем, но замедляем: чем больше неудач,
+			// тем дольше ответ.
+			delay := wait
+			if delay > 6*time.Second {
+				delay = 6 * time.Second
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(delay):
+			}
+			_ = auth.ClearFailedAttempts(s.db, ip)
+		} else {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
+			writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
+			return
+		}
 	}
 
 	var req loginRequest
@@ -62,7 +84,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	admin, err := auth.GetAdminByUsername(s.db, req.Username)
 	if errors.Is(err, sql.ErrNoRows) {
 		auth.VerifyPasswordDummy(req.Password)
-		_ = auth.RecordFailedAttempt(s.db, ip)
+		s.recordFailure(r, ip, 0)
 		_ = audit.Log(s.db, 0, audit.ActionLoginFailed, req.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
 		return
@@ -107,8 +129,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !bypass {
-			_ = auth.RecordFailedAttempt(s.db, ip)
-			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+			// Неудачная попытка обхода: продлеваем блокировку,
+			// пишем в аудит, отдаём тот же ответ, что при неверном
+			// пароле (чтобы не было оракула). См. P1-4 (новый аудит).
+			s.recordFailure(r, ip, admin.ID)
 			_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, admin.Username+":lockout_bypass", ip)
 
 			w.Header().Set("Retry-After", strconv.Itoa(int(adminWait.Seconds())))
@@ -118,8 +142,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := auth.VerifyPassword(req.Password, admin.PasswordHash); err != nil {
-		_ = auth.RecordFailedAttempt(s.db, ip)            // IP-счётчик
-		_ = auth.RecordAdminFailedAttempt(s.db, admin.ID) // + admin-счётчик
+		s.recordFailure(r, ip, admin.ID) // IP-счётчик + admin-счётчик
 		notify.LoginFailed(s.db, s.log, admin.Username, ip)
 		_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, admin.Username, ip)
 		writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid credentials"})
@@ -131,8 +154,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	totpOK := false
 	if admin.TOTPSecret != "" {
 		if req.TOTPCode == "" {
-			_ = auth.RecordFailedAttempt(s.db, ip)
-			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+			// Не раскрываем валидность пароля: даже если он верный,
+			// считаем это неудачной попыткой. Иначе атакующий по
+			// разнице 200/401 понимает, что угадал пароль. См. #7.
+			s.recordFailure(r, ip, admin.ID)
 			writeJSON(w, http.StatusOK, loginResponse{
 				NeedsTOTP: true,
 			})
@@ -151,8 +176,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !totpOK {
-			_ = auth.RecordFailedAttempt(s.db, ip)
-			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+			s.recordFailure(r, ip, admin.ID)
 			notify.LoginFailed(s.db, s.log, admin.Username, ip)
 			_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, admin.Username+":totp", ip)
 			writeJSON(w, http.StatusUnauthorized, loginResponse{Error: "invalid code"})
@@ -186,6 +210,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusOK, loginResponse{OK: true, CSRFToken: sess.CSRFToken})
+}
+
+// recordFailure обновляет счётчики неудач и, если softLockout,
+// добавляет задержку, чтобы перебор был медленным.
+func (s *Server) recordFailure(r *http.Request, ip string, adminID int64) {
+	_ = auth.RecordFailedAttempt(s.db, ip)
+	if adminID > 0 {
+		_ = auth.RecordAdminFailedAttempt(s.db, adminID)
+	}
+	if auth.IsPrivateOrLoopback(ip) && len(s.trustedNets) == 0 {
+		// Задержка 2 секунды. Точное число неудач знает только
+		// БД, но 2 секунды на попытку уже замедляют перебор
+		// в 10+ раз.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // handleLogout — POST /logout
@@ -257,8 +299,6 @@ func (s *Server) requireSession(w http.ResponseWriter, r *http.Request) (auth.Se
 
 	if sess.IP != curIP || sess.UserAgent != curUA {
 		// Логируем один раз при смене (не на каждый запрос).
-		// Проверяем, что контекст действительно новый, а не «первый
-		// запрос после смены», чтобы не спамить.
 		_ = audit.Log(s.db, sess.AdminID, "session_context_changed", sess.ID, curIP)
 
 		// Обновляем запись, чтобы следующая смена снова залогировалась.
