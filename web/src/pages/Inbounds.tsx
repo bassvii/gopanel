@@ -604,6 +604,7 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
               { value: 'ws', label: 'WebSocket' },
               { value: 'grpc', label: 'gRPC' },
               { value: 'xhttp', label: 'XHTTP' },
+              { value: 'httpupgrade', label: 'HTTPUpgrade' },
             ]}
           />
 
@@ -747,6 +748,26 @@ function InboundForm({ inbound, preset, onClose, onSaved }: InboundFormProps) {
                   </label>
                 </div>
               )}
+            </div>
+          )}
+          {stream.network === 'httpupgrade' && (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Path">
+                <input
+                  value={stream.httpupgradePath}
+                  onChange={(e) => setStream({ ...stream, httpupgradePath: e.target.value })}
+                  placeholder="/up"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Host (опционально)">
+                <input
+                  value={stream.httpupgradeHost}
+                  onChange={(e) => setStream({ ...stream, httpupgradeHost: e.target.value })}
+                  placeholder="example.com"
+                  className={inputClass}
+                />
+              </Field>
             </div>
           )}
         </Section>

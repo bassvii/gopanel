@@ -1,6 +1,6 @@
 // StreamSettings — удобное представление stream_json.
 export interface StreamSettings {
-  network: 'tcp' | 'ws' | 'grpc' | 'xhttp' | 'hysteria'
+  network: 'tcp' | 'ws' | 'grpc' | 'xhttp' | 'httpupgrade' | 'hysteria'
   security: 'none' | 'tls' | 'reality'
 
   // TCP
@@ -23,6 +23,8 @@ export interface StreamSettings {
   xhttpMaxBuffered: number         // 30
   xhttpStreamUpSecs: string        // "20-80"
   xhttpNoSSE: boolean              // убрать SSE-заголовок
+  httpupgradePath: string
+  httpupgradeHost: string
 
   // TLS
   tlsServerName: string
@@ -59,6 +61,8 @@ export const defaultStreamSettings: StreamSettings = {
   xhttpMaxBuffered: 30,
   xhttpStreamUpSecs: '',
   xhttpNoSSE: false,
+  httpupgradePath: '/',
+  httpupgradeHost: '',
   tlsServerName: '',
   tlsAlpn: '',
   tlsFingerprint: 'chrome',
@@ -90,7 +94,7 @@ export function parseStreamJSON(json: string): StreamSettings {
 
   if (typeof raw.network === 'string') {
     const n = raw.network
-    if (n === 'tcp' || n === 'ws' || n === 'grpc' || n === 'xhttp') {
+    if (n === 'tcp' || n === 'ws' || n === 'grpc' || n === 'xhttp' || n === 'httpupgrade') {
       out.network = n
     }
   }
@@ -142,6 +146,13 @@ export function parseStreamJSON(json: string): StreamSettings {
       if (typeof extra.scStreamUpServerSecs === 'string') out.xhttpStreamUpSecs = extra.scStreamUpServerSecs
       if (extra.noSSEHeader === true) out.xhttpNoSSE = true
     }
+  }
+
+  // HTTPUpgrade
+  if (out.network === 'httpupgrade') {
+    const hu = raw.httpupgradeSettings as Record<string, unknown> | undefined
+    if (typeof hu?.path === 'string') out.httpupgradePath = hu.path
+    if (typeof hu?.host === 'string') out.httpupgradeHost = hu.host
   }
 
   // TLS
@@ -236,6 +247,12 @@ export function buildStreamJSON(s: StreamSettings): string {
         out.xhttpSettings = xhttp
         break
       }
+      case 'httpupgrade':
+        out.httpupgradeSettings = {
+          path: s.httpupgradePath || '/',
+          ...(s.httpupgradeHost ? { host: s.httpupgradeHost } : {}),
+        }
+        break
       case 'hysteria':
         out.hysteriaSettings = {
           version: 2,
