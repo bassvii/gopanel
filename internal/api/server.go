@@ -336,13 +336,12 @@ func (s *Server) routes() {
 	})
 }
 
-// handleStatic отдаёт файлы фронтенда. Если файл не найден —
-// отдаёт index.html (SPA-роутинг).
+// handleStatic отдаёт файлы фронтенда. Если файл не найден:
+//   - если у пути есть расширение (.js, .css, .png) — 404,
+//     чтобы браузер не пытался распарсить index.html как JS;
+//   - иначе отдаём index.html (SPA-роутинг).
 //
-// index.html получает подстановку base_path: placeholder
-// __GOPANEL_BASE__ заменяется на s.secret. Так фронт знает
-// секретный префикс для любого base_path, а не только hex-32.
-// См. #6 нового аудита.
+// См. P1-2.
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, s.secret)
 	path = strings.TrimPrefix(path, "/")
@@ -350,8 +349,21 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		path = "index.html"
 	}
 
+	// Ассеты ищем по суффиксу "assets/": Vite собирает их в
+	// /assets/..., но при открытии вложенного роута в браузере
+	// путь может быть длиннее.
+	if i := strings.Index(path, "assets/"); i > 0 {
+		path = path[i:]
+	}
+
 	data, err := fs.ReadFile(s.webFS, path)
 	if err != nil {
+		// Файл с расширением — это точно ассет, а не роут.
+		// Отдаём 404, иначе браузер получит HTML вместо JS.
+		if filepath.Ext(path) != "" {
+			http.NotFound(w, r)
+			return
+		}
 		s.serveIndex(w, r)
 		return
 	}

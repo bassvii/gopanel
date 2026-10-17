@@ -4,6 +4,7 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -17,7 +18,7 @@ const maxRequestBody = 1 << 20 // 1 MiB
 
 // withMiddleware оборачивает mux в цепочку middleware.
 func (s *Server) withMiddleware(next http.Handler) http.Handler {
-	return s.recoverer(s.logger(s.securityHeaders(s.limitBody(next))))
+	return s.recoverer(s.logger(s.securityHeaders(s.limitBody(s.spaFallback(next)))))
 }
 
 // limitBody ограничивает размер тела запроса. Для GET/DELETE
@@ -27,6 +28,50 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// spaFallback отдаёт index.html для навигации браузера на роуты SPA.
+//
+// Без этого:
+//   - GET /<base>/users  → API вернёт JSON (это ломает прямую навигацию)
+//   - GET /<base>/users/ → handleStatic отдаст index.html (работает)
+//
+// Здесь мы смотрим Sec-Fetch-Dest: document — этот заголовок браузер
+// ставит только при загрузке страницы, но не при fetch/XHR. Если путь
+// под base_path и это навигация — отдаём index.html. См. P1-2.
+func (s *Server) spaFallback(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Только GET и только для навигации браузера.
+		if r.Method == http.MethodGet &&
+			r.Header.Get("Sec-Fetch-Dest") == "document" &&
+			strings.HasPrefix(r.URL.Path, s.secret+"/") &&
+			s.webFS != nil {
+
+			// Путь под base_path. Если это API-эндпоинт — не
+			// перехватываем. Но навигация под /base/users/ —
+			// это SPA-роут, а не API (API — /base/users без слэша).
+			trimmed := strings.TrimPrefix(r.URL.Path, s.secret)
+			trimmed = strings.TrimSuffix(trimmed, "/")
+
+			// Известные API-роуты (без слэша на конце).
+			// Если браузер открывает их напрямую — покажем SPA,
+			// а не JSON (пользователь всё равно не сможет прочитать JSON).
+			switch trimmed {
+			case "/users", "/inbounds", "/outbounds", "/routing/rules",
+				"/audit", "/notifications", "/me", "/me/sessions",
+				"/stats/summary", "/system/stats", "/system/geo/status":
+				// Это API — но пользователь открыл в браузере.
+				// Отдаём SPA, чтобы он мог перейти по навигации.
+			}
+
+			// Убеждаемся, что это не запрос к ассету.
+			if filepath.Ext(r.URL.Path) == "" {
+				s.serveIndex(w, r)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
