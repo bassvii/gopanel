@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -10,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -232,4 +234,42 @@ func UpdateSessionContext(conn *sql.DB, id, ip, userAgent string) error {
 		ip, userAgent, id,
 	)
 	return err
+}
+
+// SessionCleanupInterval — как часто чистить истёкшие сессии.
+// Сессии с истёкшим TTL или idle-таймаутом висят в /me/sessions,
+// если их не удалять, поэтому раз в час, а не раз в сутки.
+const SessionCleanupInterval = time.Hour
+
+// RunSessionCleanupLoop периодически удаляет истёкшие сессии
+// до отмены ctx. Первая чистка — сразу при старте.
+func RunSessionCleanupLoop(ctx context.Context, conn *sql.DB, log *slog.Logger) {
+	if log == nil {
+		log = slog.Default()
+	}
+
+	cleanup := func() {
+		n, err := CleanupExpiredSessions(conn)
+		if err != nil {
+			log.Warn("session cleanup failed", "err", err)
+			return
+		}
+		if n > 0 {
+			log.Info("session cleanup", "deleted", n)
+		}
+	}
+
+	cleanup()
+
+	ticker := time.NewTicker(SessionCleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
 }

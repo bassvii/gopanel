@@ -12,8 +12,11 @@ import (
 
 // Retention-политики по умолчанию.
 const (
-	TrafficRetentionDays = 90
-	AuditRetentionDays   = 365
+	TrafficRetentionDays       = 90
+	AuditRetentionDays         = 365
+	LoginAttemptsRetentionDays = 30
+	AdminLockoutsRetentionDays = 30
+	NotificationsRetentionDays = 30
 )
 
 // CleanupOldRecords удаляет старые записи из traffic и audit_log.
@@ -37,6 +40,40 @@ func CleanupOldRecords(conn *sql.DB, log *slog.Logger) {
 	} else if n, _ := res.RowsAffected(); n > 0 {
 		log.Info("audit retention", "deleted", n, "older_than_days", AuditRetentionDays)
 	}
+
+	// login_attempts: удаляем только те, что уже разблокированы
+	// и давно не обновлялись. Заблокированные трогать нельзя.
+	attemptsCutoff := now - int64(LoginAttemptsRetentionDays)*24*3600
+	res, err = conn.Exec(
+		`DELETE FROM login_attempts WHERE locked_until < ? AND first_failed < ?`,
+		now, attemptsCutoff,
+	)
+	if err != nil {
+		log.Warn("login_attempts retention failed", "err", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		log.Info("login_attempts retention", "deleted", n, "older_than_days", LoginAttemptsRetentionDays)
+	}
+
+	// admin_lockouts: то же самое.
+	lockoutsCutoff := now - int64(AdminLockoutsRetentionDays)*24*3600
+	res, err = conn.Exec(
+		`DELETE FROM admin_lockouts WHERE locked_until < ? AND first_failed < ?`,
+		now, lockoutsCutoff,
+	)
+	if err != nil {
+		log.Warn("admin_lockouts retention failed", "err", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		log.Info("admin_lockouts retention", "deleted", n, "older_than_days", AdminLockoutsRetentionDays)
+	}
+
+	// notifications: используем существующую функцию.
+	n, err := DeleteOldNotifications(conn, NotificationsRetentionDays)
+	if err != nil {
+		log.Warn("notifications retention failed", "err", err)
+	} else if n > 0 {
+		log.Info("notifications retention", "deleted", n, "older_than_days", NotificationsRetentionDays)
+	}
+
 }
 
 // RunRetentionLoop запускает очистку раз в сутки до отмены ctx.

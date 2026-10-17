@@ -372,6 +372,9 @@ func runServe(args []string) error {
 	// 11.5. Retention: чистка traffic и audit_log раз в сутки.
 	go db.RunRetentionLoop(ctx, conn, log)
 
+	// 11.6. Чистка истёкших сессий — раз в час.
+	go auth.RunSessionCleanupLoop(ctx, conn, log)
+
 	// 12. HTTP-сервер.
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Start() }()
