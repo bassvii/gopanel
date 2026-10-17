@@ -107,8 +107,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !bypass {
+			_ = auth.RecordFailedAttempt(s.db, ip)
+			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
+			_ = audit.Log(s.db, admin.ID, audit.ActionLoginFailed, admin.Username+":lockout_bypass", ip)
+
 			w.Header().Set("Retry-After", strconv.Itoa(int(adminWait.Seconds())))
-			writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "too many attempts, try later"})
+			writeJSON(w, http.StatusTooManyRequests, loginResponse{Error: "invalid credentials"})
 			return
 		}
 	}
@@ -127,6 +131,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	totpOK := false
 	if admin.TOTPSecret != "" {
 		if req.TOTPCode == "" {
+			_ = auth.RecordFailedAttempt(s.db, ip)
+			_ = auth.RecordAdminFailedAttempt(s.db, admin.ID)
 			writeJSON(w, http.StatusOK, loginResponse{
 				NeedsTOTP: true,
 			})
