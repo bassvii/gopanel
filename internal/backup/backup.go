@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -82,4 +84,51 @@ func escapeSQLString(s string) string {
 		out = append(out, s[i])
 	}
 	return string(out)
+}
+
+// EncryptFile шифрует файл src в dst с помощью утилиты age.
+// Пароль передаётся через stdin (не через аргументы, чтобы не
+// попасть в ps). Файл src удаляется после успешного шифрования.
+//
+// Требует установленного в системе `age` (apt install age или
+// brew install age). Если age не найден — возвращает понятную ошибку.
+func EncryptFile(ctx context.Context, src, dst, password string) error {
+	// Проверяем наличие age.
+	if _, err := exec.LookPath("age"); err != nil {
+		return fmt.Errorf("утилита age не найдена. Установите её: apt install age (или brew install age)")
+	}
+
+	// Открываем исходный файл.
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	defer in.Close()
+
+	// Создаём целевой файл с правами 0600.
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create target: %w", err)
+	}
+	defer out.Close()
+
+	// age -e -p (passphrase mode) -o dst.
+	// Пароль идёт через stdin (второй \n нужен для подтверждения).
+	cmd := exec.CommandContext(ctx, "age", "-e", "-p", "-o", dst)
+	cmd.Stdin = strings.NewReader(password + "\n" + password + "\n")
+	cmd.Stdout = os.Stderr // прогресс/ошибки age идут в stderr
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		_ = out.Close()
+		_ = os.Remove(dst)
+		return fmt.Errorf("age encryption failed: %w", err)
+	}
+
+	// Удаляем исходный файл с секретами.
+	if err := os.Remove(src); err != nil {
+		return fmt.Errorf("remove plaintext backup: %w", err)
+	}
+
+	return nil
 }

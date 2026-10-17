@@ -647,6 +647,7 @@ func runBackup(args []string) error {
 		dbPath  = fs.String("db", "", "путь к БД (если пусто — из конфига)")
 		outPath = fs.String("out", "", "куда сохранить дамп (по умолчанию рядом с БД)")
 		cfgPath = fs.String("config", "", "путь к JSON-конфигу (если пусто — из env GOPANEL_CONFIG)")
+		encrypt = fs.Bool("encrypt", false, "зашифровать бэкап паролем через age (требует установленного age)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -676,12 +677,52 @@ func runBackup(args []string) error {
 		return err
 	}
 
+	// Шифрование через age.
+	if *encrypt {
+		password, err := readEncryptionPassword()
+		if err != nil {
+			return err
+		}
+		encOut := out + ".age"
+		if err := backup.EncryptFile(context.Background(), out, encOut, password); err != nil {
+			return err
+		}
+		out = encOut
+	}
+
 	info, err := os.Stat(out)
 	if err != nil {
 		return fmt.Errorf("stat backup %s: %w", out, err)
 	}
 	fmt.Printf("backup created: %s (%d bytes)\n", out, info.Size())
+	if *encrypt {
+		fmt.Println("Расшифровка: age -d -o backup.db " + out)
+	}
 	return nil
+}
+
+// readEncryptionPassword запрашивает пароль для шифрования бэкапа
+// (дважды, без эха). Минимум 12 символов.
+func readEncryptionPassword() (string, error) {
+	fmt.Print("пароль для шифрования бэкапа: ")
+	p1, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+	if len(p1) < auth.MinPasswordLen {
+		return "", fmt.Errorf("пароль должен быть не короче %d символов", auth.MinPasswordLen)
+	}
+	fmt.Print("повторите пароль: ")
+	p2, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+	if string(p1) != string(p2) {
+		return "", fmt.Errorf("пароли не совпадают")
+	}
+	return string(p1), nil
 }
 
 // readPasswordInteractive запрашивает пароль у пользователя без эха.
