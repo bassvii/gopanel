@@ -260,6 +260,13 @@ func (s *Server) handleInbound(w http.ResponseWriter, r *http.Request) {
 // outbound. См. P3-2 третьего аудита.
 var reservedInboundTags = []string{"api", "direct", "block"}
 
+// isUDPProtocol возвращает true для протоколов, которые работают
+// только на UDP (Hysteria2 в Xray). Для остальных считаем TCP,
+// так как mKCP/QUIC в stream_json здесь не анализируются.
+func isUDPProtocol(protocol string) bool {
+	return protocol == "hysteria"
+}
+
 func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, excludeID int64) error {
 	tag := strings.TrimSpace(p.Tag)
 	if tag == "" {
@@ -300,6 +307,9 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 
 	// Уникальность (listen, port) среди включённых инбаундов.
 	// Игнорируем excludeID — это случай, когда мы обновляем тот же инбаунд.
+	// Проверяем только конфликты в пределах одного L4-протокола:
+	// TCP-инбаунд и UDP-инбаунд на одном порту не конфликтуют.
+	myUDP := isUDPProtocol(protocol)
 	for _, in := range existing {
 		if in.ID == excludeID {
 			continue
@@ -310,14 +320,18 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 		if in.Port != p.Port {
 			continue
 		}
+		if isUDPProtocol(in.Protocol) != myUDP {
+			continue // разные L4-протоколы — не конфликтуют
+		}
 		// Один порт на двух listen'ах конфликтует, если один из
 		// них 0.0.0.0 (или ::), либо listen'ы совпадают.
 		if in.Listen == p.Listen ||
 			in.Listen == "0.0.0.0" || in.Listen == "::" ||
 			p.Listen == "0.0.0.0" || p.Listen == "::" {
 			return fmt.Errorf(
-				"порт %d на %s конфликтует с инбаундом %q (%s)",
-				p.Port, p.Listen, in.Tag, in.Listen,
+				"порт %d/%s на %s конфликтует с инбаундом %q (%s/%s)",
+				p.Port, transportName(myUDP), p.Listen,
+				in.Tag, in.Listen, transportName(isUDPProtocol(in.Protocol)),
 			)
 		}
 	}
@@ -343,6 +357,13 @@ func validateInbound(p inboundPayload, adminPort int, existing []db.Inbound, exc
 	}
 
 	return nil
+}
+
+func transportName(udp bool) string {
+	if udp {
+		return "udp"
+	}
+	return "tcp"
 }
 
 // hasAuthUsers проверяет, есть ли в settings_json хотя бы один

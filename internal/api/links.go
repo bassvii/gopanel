@@ -4,8 +4,12 @@ package api
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/bassvii/gopanel/internal/db"
 	"github.com/bassvii/gopanel/internal/links"
@@ -38,10 +42,13 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Адрес сервера: query-параметр или дефолт.
-	address := r.URL.Query().Get("address")
-	if address == "" {
-		address = "127.0.0.1"
+	// Адрес сервера — только из query. Молча подставлять
+	// 127.0.0.1 нельзя: внешние клиенты по такой ссылке не
+	// подключатся, а админ не поймёт, почему.
+	address := strings.TrimSpace(r.URL.Query().Get("address"))
+	if err := validateAddress(address); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 	withQR := r.URL.Query().Get("qr") == "1"
 
@@ -120,4 +127,24 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
+
+// validateAddress проверяет, что адрес — IP или hostname.
+// Пустая строка допустима (вернётся ошибка выше).
+func validateAddress(addr string) error {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return errors.New("address is required")
+	}
+	// IPv4/IPv6.
+	if net.ParseIP(addr) != nil {
+		return nil
+	}
+	// Hostname (без порта, без схемы, без пути).
+	if !hostnameRe.MatchString(addr) || len(addr) > 253 {
+		return fmt.Errorf("address %q не является IP или hostname", addr)
+	}
+	return nil
 }
